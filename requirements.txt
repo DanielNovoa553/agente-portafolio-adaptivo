@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+langgraph
+langchain
+langchain-google-genai
+google-genai
+pypdf
+chromadb
+python-multipart
+slowapi
+pytest
+httpx

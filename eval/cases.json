@@ -1,0 +1,137 @@
+[
+  {
+    "id": "backend-aws-serverless",
+    "output_type": "cv",
+    "should_match": true,
+    "job_text": "Buscamos Backend Engineer Python Senior para construir servicios serverless en AWS. Requisitos: Python, AWS Lambda, S3, SQS, DynamoDB, diseño de arquitecturas escalables y tolerantes a fallos, experiencia con procesamiento masivo de datos. Se valora CDK y CloudWatch.",
+    "expected": ["8,000 documentos", "SQS", "Lambda, S3, DynamoDB y SQS"]
+  },
+  {
+    "id": "iac-cdk-cloud-engineer",
+    "output_type": "cv",
+    "should_match": true,
+    "job_text": "Cloud Engineer / DevOps con enfoque en infraestructura como código. Responsabilidades: definir stacks con AWS CDK, controlar costos, revisar logs y detectar drift en entornos productivos. Requisitos: AWS, CDK, CloudWatch, buenas prácticas de seguridad y despliegue.",
+    "expected": ["AWS CDK", "drift"]
+  },
+  {
+    "id": "ai-engineer-llm-extraction",
+    "output_type": "projects",
+    "should_match": true,
+    "job_text": "AI Engineer para construir aplicaciones con LLMs. Extracción estructurada de datos desde documentos PDF, validación de salidas con Pydantic, evaluación de calidad del modelo, uso de Gemini u Ollama, y protección de datos personales antes de enviarlos a la nube.",
+    "expected": ["Procesador inteligente de facturas PDF", "Enmascarado de datos personales"]
+  },
+  {
+    "id": "genai-vertex-responsible-ai",
+    "output_type": "cover_letter",
+    "should_match": true,
+    "job_text": "Generative AI Engineer junior en plataforma cloud. Trabajarás con Vertex AI, modelos de lenguaje grandes, ingeniería de prompts y principios de IA responsable. Se valoran certificaciones de Google Cloud y experiencia previa integrando la API de Gemini.",
+    "expected": ["Vertex AI Studio", "Responsible AI", "Gemini"]
+  },
+  {
+    "id": "fastapi-api-developer",
+    "output_type": "cv",
+    "should_match": true,
+    "job_text": "Desarrollador de APIs REST con FastAPI y Pydantic. Modelado con SQLAlchemy y PostgreSQL, pruebas con Pytest, contenedores con Docker y documentación OpenAPI. Experiencia demostrable con proyectos propios o de producción.",
+    "expected": ["FastAPI", "Pytest", "Docker"]
+  },
+  {
+    "id": "data-engineer-etl",
+    "output_type": "cv",
+    "should_match": true,
+    "job_text": "Data Engineer: diseño y mantenimiento de pipelines ETL con Python y Pandas, procesamiento de datos financieros, orquestación diaria de cargas y modelos analíticos. Conocimientos de SQL, bases relacionales y NoSQL.",
+    "expected": ["pipelines ETL", "Pandas", "Post-Benchmark"]
+  },
+  {
+    "id": "fullstack-flask-js",
+    "output_type": "projects",
+    "should_match": true,
+    "job_text": "Full Stack Developer con Flask en backend y JavaScript con Bootstrap en frontend. Autenticación con JWT, tareas programadas con APScheduler, PostgreSQL y desarrollo de aplicaciones web completas con dashboards y notificaciones.",
+    "expected": ["MindSupport", "FinZen", "Verdea"]
+  },
+  {
+    "id": "healthcare-hl7",
+    "output_type": "cv",
+    "should_match": true,
+    "job_text": "Ingeniero de integración en el sector salud. Experiencia con el estándar HL7, expedientes clínicos, AWS HealthLake, notificaciones en tiempo real y cumplimiento de privacidad de datos de pacientes.",
+    "expected": ["HL7", "Aidicare"]
+  },
+  {
+    "id": "fintech-credit-risk",
+    "output_type": "cover_letter",
+    "should_match": true,
+    "job_text": "Desarrollador para banca digital: sistemas de análisis de riesgo crediticio, motores de reglas de negocio, validación de identidad con servicios gubernamentales y plataformas low-code como Appian.",
+    "expected": ["Appian", "RENAPO"]
+  },
+  {
+    "id": "qa-testing-coverage",
+    "output_type": "cv",
+    "should_match": true,
+    "job_text": "Software Engineer con fuerte cultura de calidad. Pruebas unitarias con Pytest, alta cobertura de código, pruebas de integración y automatización de validaciones en pipelines de CI.",
+    "expected": ["98 %"]
+  },
+  {
+    "id": "backend-performance-db",
+    "output_type": "cv",
+    "should_match": true,
+    "job_text": "Backend Developer enfocado en rendimiento: optimización de consultas SQL, caché, paginación eficiente, endpoints de búsqueda con filtros dinámicos y APIs que soporten alta concurrencia.",
+    "expected": ["40 %", "caché y paginación"]
+  },
+  {
+    "id": "ecommerce-wordpress",
+    "output_type": "cv",
+    "should_match": true,
+    "job_text": "Desarrollador web para tiendas en línea con WordPress y WooCommerce. PHP, HTML5, CSS3, interfaces responsivas, integración de pasarelas de pago seguras y personalización de temas.",
+    "expected": ["WooCommerce"]
+  },
+  {
+    "id": "integrations-channel-manager",
+    "output_type": "projects",
+    "should_match": true,
+    "job_text": "Ingeniero de integraciones: consumo de APIs de terceros (Expedia, Airbnb, Booking.com), sincronización de disponibilidad en tiempo real, manejo de conflictos y diseño de sistemas de reservas para la industria hotelera.",
+    "expected": ["Channel Manager"]
+  },
+  {
+    "id": "technical-trainer",
+    "output_type": "cover_letter",
+    "should_match": true,
+    "job_text": "Buscamos ingeniero con vocación de mentor para capacitar equipos internos: diseñar y dictar cursos técnicos sobre APIs REST, despliegue serverless y herramientas low-code, y dar soporte a equipos de distintos países de LATAM.",
+    "expected": ["curso interno", "equipos de LATAM"]
+  },
+  {
+    "id": "aws-developer-certified",
+    "output_type": "cv",
+    "should_match": true,
+    "job_text": "Se requiere AWS Developer con certificación Associate vigente. Experiencia con Lambda, SQS, SNS, DynamoDB y despliegue con Zappa o frameworks serverless. Trabajo con clientes de seguros y banca.",
+    "expected": ["AWS Certified Developer", "Zappa"]
+  },
+  {
+    "id": "no-match-chef",
+    "output_type": "cv",
+    "should_match": false,
+    "job_text": "Se busca chef ejecutivo para restaurante de alta cocina. Responsable de diseñar el menú de temporada, gestionar la brigada de cocina, controlar mermas y garantizar normas de higiene y manipulación de alimentos."
+  },
+  {
+    "id": "no-match-nurse",
+    "output_type": "cv",
+    "should_match": false,
+    "job_text": "Enfermero(a) para turno nocturno en hospital. Administración de medicamentos, toma de signos vitales, cuidado directo de pacientes hospitalizados, curaciones y apoyo al equipo médico en urgencias."
+  },
+  {
+    "id": "no-match-lawyer",
+    "output_type": "cover_letter",
+    "should_match": false,
+    "job_text": "Abogado litigante senior para despacho jurídico. Representación en juicios mercantiles y civiles, redacción de demandas y contratos, asesoría en derecho corporativo y manejo de audiencias ante tribunales."
+  },
+  {
+    "id": "no-match-mechanical",
+    "output_type": "projects",
+    "should_match": false,
+    "job_text": "Ingeniero mecánico para diseño de motores de combustión. Cálculo de esfuerzos, modelado en CAD 3D, simulación por elementos finitos, tolerancias de manufactura y pruebas de banco de componentes."
+  },
+  {
+    "id": "no-match-sales",
+    "output_type": "cover_letter",
+    "should_match": false,
+    "job_text": "Ejecutivo de ventas de campo para distribución de bebidas. Visitas a tiendas de abarrotes, negociación de exhibidores, cumplimiento de cuotas mensuales de venta y cobranza a clientes minoristas."
+  }
+]

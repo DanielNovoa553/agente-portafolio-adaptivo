@@ -1,0 +1,295 @@
+{
+  "model": "gemini-3.1-flash-lite",
+  "summary": {
+    "cases": 20,
+    "errors": 0,
+    "recall_at_5": [
+      31,
+      32
+    ],
+    "valid_first_try": [
+      15,
+      15
+    ],
+    "generated_ok": [
+      15,
+      15
+    ],
+    "faithful": [
+      15,
+      15
+    ],
+    "correct_rejections": [
+      5,
+      5
+    ],
+    "false_rejections": [
+      0,
+      15
+    ]
+  },
+  "cases": [
+    {
+      "id": "backend-aws-serverless",
+      "should_match": true,
+      "output_type": "cv",
+      "status": "ok",
+      "attempts": 1,
+      "evidence": 9,
+      "top_score": 0.7696,
+      "seconds": 5.6,
+      "hits": 2,
+      "expected": 3,
+      "missed": [
+        "Lambda, S3, DynamoDB y SQS"
+      ],
+      "unsupported_numbers": []
+    },
+    {
+      "id": "iac-cdk-cloud-engineer",
+      "should_match": true,
+      "output_type": "cv",
+      "status": "ok",
+      "attempts": 1,
+      "evidence": 9,
+      "top_score": 0.6934,
+      "seconds": 22.3,
+      "hits": 2,
+      "expected": 2,
+      "missed": [],
+      "unsupported_numbers": []
+    },
+    {
+      "id": "ai-engineer-llm-extraction",
+      "should_match": true,
+      "output_type": "projects",
+      "status": "ok",
+      "attempts": 1,
+      "evidence": 6,
+      "top_score": 0.78,
+      "seconds": 18.7,
+      "hits": 2,
+      "expected": 2,
+      "missed": [],
+      "unsupported_numbers": []
+    },
+    {
+      "id": "genai-vertex-responsible-ai",
+      "should_match": true,
+      "output_type": "cover_letter",
+      "status": "ok",
+      "attempts": 1,
+      "evidence": 6,
+      "top_score": 0.7167,
+      "seconds": 12.7,
+      "hits": 3,
+      "expected": 3,
+      "missed": [],
+      "unsupported_numbers": []
+    },
+    {
+      "id": "fastapi-api-developer",
+      "should_match": true,
+      "output_type": "cv",
+      "status": "ok",
+      "attempts": 1,
+      "evidence": 10,
+      "top_score": 0.6996,
+      "seconds": 46.3,
+      "hits": 3,
+      "expected": 3,
+      "missed": [],
+      "unsupported_numbers": []
+    },
+    {
+      "id": "data-engineer-etl",
+      "should_match": true,
+      "output_type": "cv",
+      "status": "ok",
+      "attempts": 1,
+      "evidence": 12,
+      "top_score": 0.7276,
+      "seconds": 5.1,
+      "hits": 3,
+      "expected": 3,
+      "missed": [],
+      "unsupported_numbers": []
+    },
+    {
+      "id": "fullstack-flask-js",
+      "should_match": true,
+      "output_type": "projects",
+      "status": "ok",
+      "attempts": 1,
+      "evidence": 9,
+      "top_score": 0.7487,
+      "seconds": 8.2,
+      "hits": 3,
+      "expected": 3,
+      "missed": [],
+      "unsupported_numbers": []
+    },
+    {
+      "id": "healthcare-hl7",
+      "should_match": true,
+      "output_type": "cv",
+      "status": "ok",
+      "attempts": 1,
+      "evidence": 11,
+      "top_score": 0.6992,
+      "seconds": 10.8,
+      "hits": 2,
+      "expected": 2,
+      "missed": [],
+      "unsupported_numbers": []
+    },
+    {
+      "id": "fintech-credit-risk",
+      "should_match": true,
+      "output_type": "cover_letter",
+      "status": "ok",
+      "attempts": 1,
+      "evidence": 10,
+      "top_score": 0.7297,
+      "seconds": 11.5,
+      "hits": 2,
+      "expected": 2,
+      "missed": [],
+      "unsupported_numbers": []
+    },
+    {
+      "id": "qa-testing-coverage",
+      "should_match": true,
+      "output_type": "cv",
+      "status": "ok",
+      "attempts": 1,
+      "evidence": 7,
+      "top_score": 0.6893,
+      "seconds": 7.5,
+      "hits": 1,
+      "expected": 1,
+      "missed": [],
+      "unsupported_numbers": []
+    },
+    {
+      "id": "backend-performance-db",
+      "should_match": true,
+      "output_type": "cv",
+      "status": "ok",
+      "attempts": 1,
+      "evidence": 9,
+      "top_score": 0.7191,
+      "seconds": 27.6,
+      "hits": 2,
+      "expected": 2,
+      "missed": [],
+      "unsupported_numbers": []
+    },
+    {
+      "id": "ecommerce-wordpress",
+      "should_match": true,
+      "output_type": "cv",
+      "status": "ok",
+      "attempts": 1,
+      "evidence": 11,
+      "top_score": 0.7014,
+      "seconds": 4.5,
+      "hits": 1,
+      "expected": 1,
+      "missed": [],
+      "unsupported_numbers": []
+    },
+    {
+      "id": "integrations-channel-manager",
+      "should_match": true,
+      "output_type": "projects",
+      "status": "ok",
+      "attempts": 1,
+      "evidence": 12,
+      "top_score": 0.6857,
+      "seconds": 5.5,
+      "hits": 1,
+      "expected": 1,
+      "missed": [],
+      "unsupported_numbers": []
+    },
+    {
+      "id": "technical-trainer",
+      "should_match": true,
+      "output_type": "cover_letter",
+      "status": "ok",
+      "attempts": 1,
+      "evidence": 11,
+      "top_score": 0.7049,
+      "seconds": 15.2,
+      "hits": 2,
+      "expected": 2,
+      "missed": [],
+      "unsupported_numbers": []
+    },
+    {
+      "id": "aws-developer-certified",
+      "should_match": true,
+      "output_type": "cv",
+      "status": "ok",
+      "attempts": 1,
+      "evidence": 9,
+      "top_score": 0.7816,
+      "seconds": 24.0,
+      "hits": 2,
+      "expected": 2,
+      "missed": [],
+      "unsupported_numbers": []
+    },
+    {
+      "id": "no-match-chef",
+      "should_match": false,
+      "output_type": "cv",
+      "status": "insufficient_evidence",
+      "attempts": 0,
+      "evidence": 12,
+      "top_score": 0.6035,
+      "seconds": 4.1
+    },
+    {
+      "id": "no-match-nurse",
+      "should_match": false,
+      "output_type": "cv",
+      "status": "insufficient_evidence",
+      "attempts": 0,
+      "evidence": 10,
+      "top_score": 0.6081,
+      "seconds": 7.1
+    },
+    {
+      "id": "no-match-lawyer",
+      "should_match": false,
+      "output_type": "cover_letter",
+      "status": "insufficient_evidence",
+      "attempts": 0,
+      "evidence": 11,
+      "top_score": 0.5888,
+      "seconds": 3.0
+    },
+    {
+      "id": "no-match-mechanical",
+      "should_match": false,
+      "output_type": "projects",
+      "status": "insufficient_evidence",
+      "attempts": 0,
+      "evidence": 11,
+      "top_score": 0.6371,
+      "seconds": 3.8
+    },
+    {
+      "id": "no-match-sales",
+      "should_match": false,
+      "output_type": "cover_letter",
+      "status": "insufficient_evidence",
+      "attempts": 0,
+      "evidence": 11,
+      "top_score": 0.5967,
+      "seconds": 6.8
+    }
+  ]
+}

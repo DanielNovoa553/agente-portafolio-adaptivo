@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="es" data-bs-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portafolio Adaptativo · Generador de documentos con IA</title>
+  <meta name="description" content="Agente de IA que adapta tu CV, proyectos y carta de presentación a cada oferta de trabajo.">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="/styles.css" rel="stylesheet">
+</head>
+<body>
+
+  <nav class="navbar navbar-expand sticky-top app-nav">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center gap-2 fw-bold" href="#">
+        <span class="brand-mark"><i class="bi bi-stars"></i></span>
+        Portafolio Adaptativo
+      </a>
+      <div class="ms-auto d-flex align-items-center gap-2">
+        <span class="badge rounded-pill status-pill" id="apiStatus">
+          <span class="dot"></span><span id="apiStatusText">Conectando…</span>
+        </span>
+        <button class="btn btn-icon" id="themeToggle" type="button" aria-label="Cambiar tema">
+          <i class="bi bi-moon-stars"></i>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="container text-center">
+      <span class="hero-tag"><i class="bi bi-lightning-charge-fill"></i> RAG + LangGraph + Pydantic</span>
+      <h1 class="hero-title">Tu perfil, adaptado a <span class="gradient-text">cada oferta</span></h1>
+      <p class="hero-sub">
+        Sube tu CV y proyectos, pega una oferta de trabajo y obtén un documento personalizado,
+        respaldado únicamente por evidencia real de tu perfil.
+      </p>
+    </div>
+  </header>
+
+  <main class="container pb-5">
+    <div class="row g-4">
+
+      <!-- Columna izquierda: entradas -->
+      <div class="col-lg-5">
+
+        <section class="card app-card mb-4">
+          <div class="card-body">
+            <div class="step-head">
+              <span class="step-num">1</span>
+              <div>
+                <h2 class="step-title">Tu perfil</h2>
+                <p class="step-desc">CV, proyectos o certificaciones (.md, .txt, .pdf · máx. 5 MB)</p>
+              </div>
+            </div>
+
+            <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Seleccionar archivo">
+              <i class="bi bi-cloud-arrow-up"></i>
+              <p class="mb-1 fw-semibold">Arrastra un archivo o haz clic para elegirlo</p>
+              <p class="small text-body-secondary mb-0" id="fileName">Ningún archivo seleccionado</p>
+              <input type="file" id="fileInput" accept=".md,.txt,.pdf" hidden>
+            </div>
+
+            <div class="row g-2 mt-2">
+              <div class="col-sm-7">
+                <select class="form-select" id="docType" aria-label="Tipo de documento">
+                  <option value="cv">CV</option>
+                  <option value="project">Proyecto</option>
+                  <option value="certification">Certificación</option>
+                  <option value="other">Otro</option>
+                </select>
+              </div>
+              <div class="col-sm-5">
+                <button class="btn btn-primary w-100" id="uploadBtn" type="button" disabled>
+                  <span class="btn-label"><i class="bi bi-upload me-1"></i> Subir</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="sources mt-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="small fw-semibold text-body-secondary text-uppercase">Fuentes indexadas</span>
+                <span class="badge count-badge" id="chunkCount">0 fragmentos</span>
+              </div>
+              <ul class="list-unstyled mb-0" id="sourcesList"></ul>
+              <p class="small text-body-secondary mb-0" id="sourcesEmpty">Aún no has subido nada.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="card app-card">
+          <div class="card-body">
+            <div class="step-head">
+              <span class="step-num">2</span>
+              <div>
+                <h2 class="step-title">La oferta</h2>
+                <p class="step-desc">Pega la descripción del puesto y elige qué generar</p>
+              </div>
+            </div>
+
+            <label for="jobText" class="visually-hidden">Descripción de la oferta</label>
+            <textarea class="form-control" id="jobText" rows="9" maxlength="8000"
+              placeholder="Pega aquí la oferta de trabajo completa…"></textarea>
+            <div class="d-flex justify-content-between small text-body-secondary mt-1">
+              <span id="jobHint">Mínimo 50 caracteres</span>
+              <span id="jobCounter">0 / 8000</span>
+            </div>
+
+            <div class="mt-3">
+              <label for="modelSelect" class="form-label small fw-semibold mb-1"><i class="bi bi-cpu me-1"></i>Modelo de IA</label>
+              <select class="form-select form-select-sm" id="modelSelect" aria-label="Modelo de IA">
+                <option value="">Cargando modelos…</option>
+              </select>
+            </div>
+
+            <div class="output-options mt-3" role="radiogroup" aria-label="Tipo de salida">
+              <input type="radio" class="btn-check" name="outputType" id="outCv" value="cv" checked>
+              <label class="output-opt" for="outCv"><i class="bi bi-file-earmark-person"></i><span>CV adaptado</span></label>
+
+              <input type="radio" class="btn-check" name="outputType" id="outProjects" value="projects">
+              <label class="output-opt" for="outProjects"><i class="bi bi-kanban"></i><span>Proyectos</span></label>
+
+              <input type="radio" class="btn-check" name="outputType" id="outLetter" value="cover_letter">
+              <label class="output-opt" for="outLetter"><i class="bi bi-envelope-paper"></i><span>Carta</span></label>
+            </div>
+
+            <button class="btn btn-primary btn-lg w-100 mt-4 generate-btn" id="generateBtn" type="button" disabled>
+              <span class="btn-label"><i class="bi bi-magic me-2"></i>Generar documento</span>
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <!-- Columna derecha: resultado -->
+      <div class="col-lg-7">
+        <section class="card app-card result-card">
+          <div class="card-header result-header">
+            <ul class="nav nav-pills" id="resultTabs" role="tablist">
+              <li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" data-bs-target="#tabDoc" type="button" role="tab">Documento</button></li>
+              <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tabEvidence" type="button" role="tab">Evidencias <span class="badge rounded-pill ms-1" id="evidenceBadge">0</span></button></li>
+            </ul>
+            <div class="btn-group result-actions" id="resultActions" hidden>
+              <button class="btn btn-sm btn-outline-secondary" id="copyBtn" type="button"><i class="bi bi-clipboard me-1"></i>Copiar</button>
+              <button class="btn btn-sm btn-outline-secondary" id="downloadBtn" type="button"><i class="bi bi-download me-1"></i>.md</button>
+            </div>
+          </div>
+
+          <div class="card-body tab-content">
+            <div class="tab-pane fade show active" id="tabDoc" role="tabpanel">
+              <div class="empty-state" id="emptyState">
+                <div class="empty-icon"><i class="bi bi-file-earmark-text"></i></div>
+                <h3>Tu documento aparecerá aquí</h3>
+                <p>Sube tu perfil, pega una oferta y pulsa <strong>Generar</strong>.</p>
+              </div>
+
+              <div class="loading-state" id="loadingState" hidden>
+                <div class="spinner-border" role="status"></div>
+                <h3>Generando…</h3>
+                <ol class="loading-steps" id="loadingSteps">
+                  <li>Analizando la oferta</li>
+                  <li>Recuperando evidencia de tu perfil</li>
+                  <li>Redactando y validando</li>
+                </ol>
+                <p class="small text-body-secondary mb-0">Puede tardar hasta un minuto.</p>
+              </div>
+
+              <div class="alert alert-danger d-flex gap-2 align-items-start" id="errorBox" role="alert" hidden>
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                <div id="errorText"></div>
+              </div>
+
+              <article class="document" id="documentView" hidden></article>
+            </div>
+
+            <div class="tab-pane fade" id="tabEvidence" role="tabpanel">
+              <p class="small text-body-secondary">Fragmentos de tu perfil que respaldan el documento generado.</p>
+              <div id="evidenceList"></div>
+              <p class="text-body-secondary" id="evidenceEmpty">Sin evidencias todavía.</p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="app-footer">
+    <div class="container text-center small">
+      Hecho con FastAPI · LangGraph · ChromaDB · Gemini ·
+      <button type="button" class="btn btn-link btn-sm p-0 align-baseline" id="privacyOpen">Aviso de privacidad</button>
+    </div>
+  </footer>
+
+  <div class="modal fade" id="privacyModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false" aria-labelledby="privacyTitle" aria-modal="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title fs-5" id="privacyTitle"><i class="bi bi-shield-lock me-2"></i>Aviso de privacidad</h2>
+        </div>
+        <div class="modal-body small">
+          <p>Para generar documentos, esta aplicación procesa el contenido de los archivos que subas (CV, proyectos, certificaciones) y de las ofertas que pegues. Esa información puede incluir <strong>datos personales y sensibles</strong>.</p>
+          <ul>
+            <li><strong>Envío a Google Gemini:</strong> fragmentos de tus documentos y la oferta se envían a la API de Google para crear embeddings y generar el texto. En el nivel gratuito, Google puede usar estos datos para mejorar sus productos y personal autorizado podría revisarlos.</li>
+            <li><strong>Almacenamiento:</strong> tus documentos se guardan como fragmentos en la base vectorial del servidor donde se ejecuta la app. Puedes borrarlos en cualquier momento desde la lista de fuentes.</li>
+            <li><strong>Recomendación:</strong> no subas documentos con datos que no quieras compartir (número de identificación, domicilio, datos de salud, etc.).</li>
+            <li>Los resultados son generados por IA: revísalos antes de usarlos.</li>
+          </ul>
+          <div class="form-check mt-3">
+            <input class="form-check-input" type="checkbox" id="privacyCheck">
+            <label class="form-check-label" for="privacyCheck">Entiendo lo anterior y acepto el tratamiento de mis datos, incluido su envío a Google Gemini.</label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" id="privacyDecline">No acepto</button>
+          <button type="button" class="btn btn-primary" id="privacyAccept" disabled>Aceptar y continuar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="consent-lock" id="consentLock" hidden>
+    <div class="text-center p-4">
+      <i class="bi bi-shield-exclamation display-4"></i>
+      <h2 class="h4 mt-3">No puedes usar la aplicación sin aceptar el aviso de privacidad</h2>
+      <p class="text-body-secondary">Tus datos no se han enviado ni almacenado.</p>
+      <button type="button" class="btn btn-primary" id="privacyReview">Revisar aviso de privacidad</button>
+    </div>
+  </div>
+
+  <div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="toast" class="toast align-items-center border-0" role="status" aria-live="polite" aria-atomic="true">
+      <div class="d-flex">
+        <div class="toast-body" id="toastBody"></div>
+        <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Cerrar"></button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
