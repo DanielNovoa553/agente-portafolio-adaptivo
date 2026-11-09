@@ -297,6 +297,27 @@ textarea.form-control { resize: vertical; min-height: 140px; }
   border: 1px solid rgba(99, 102, 241, .2); padding: .15rem .5rem; border-radius: .4rem;
 }
 
+.interview-suggestion {
+  border: 1px solid rgba(99, 102, 241, .3); border-radius: .9rem;
+  background: rgba(99, 102, 241, .06); padding: 1rem 1.1rem; margin: .6rem 0 .85rem;
+  animation: fadeUp .25s ease both;
+}
+.suggestion-head { display: flex; justify-content: space-between; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.suggestion-head h4 { font-size: .95rem; font-weight: 800; margin: 0; }
+.suggestion-ai {
+  font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--brand-1); background: rgba(99, 102, 241, .12);
+  border: 1px solid rgba(99, 102, 241, .25); border-radius: 999px; padding: .15rem .55rem;
+}
+.suggestion-notice { font-size: .75rem; color: var(--bs-secondary-color); margin: .45rem 0 .75rem; }
+.suggestion-answer { font-size: .9rem; line-height: 1.6; white-space: pre-line; margin-bottom: .85rem; }
+.suggestion-block { border-top: 1px solid var(--border); padding-top: .7rem; margin-top: .7rem; }
+.suggestion-block h5 { font-size: .8rem; font-weight: 700; margin-bottom: .35rem; }
+.suggestion-block ul, .suggestion-block ol { padding-left: 1.1rem; font-size: .82rem; }
+.suggestion-block li { margin-bottom: .2rem; }
+.suggestion-block.warn h5 i { color: #d97706; }
+.suggestion-block.ok h5 i { color: #16a34a; }
+
 .interview-feedback, .interview-summary { animation: fadeUp .3s ease both; }
 .interview-verdict {
   display: flex; align-items: center; gap: 1rem; padding: 1rem 1.2rem;
@@ -343,6 +364,9 @@ textarea.form-control { resize: vertical; min-height: 140px; }
 [data-bs-theme="dark"] .feedback-block.ok h4 i { color: #4ade80; }
 [data-bs-theme="dark"] .feedback-block.warn h4 i { color: #fbbf24; }
 [data-bs-theme="dark"] .feedback-block.flag h4 i { color: #f87171; }
+[data-bs-theme="dark"] .interview-suggestion { background: rgba(99, 102, 241, .12); }
+[data-bs-theme="dark"] .suggestion-block.warn h5 i { color: #fbbf24; }
+[data-bs-theme="dark"] .suggestion-block.ok h5 i { color: #4ade80; }
 
 /* Footer / toast */
 .app-footer { padding: 1.5rem 0; border-top: 1px solid var(--border); color: var(--bs-secondary-color); }

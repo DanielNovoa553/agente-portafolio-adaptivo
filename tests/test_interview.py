@@ -1,10 +1,11 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from app.agent.state import OutputType
 from app.interview import service
-from app.interview.prompts import EVAL_SYSTEM
+from app.interview.prompts import EVAL_SYSTEM, SUGGEST_SYSTEM
 from app.interview.service import (
     InvalidInterviewInput,
     InterviewGenerationFailed,
@@ -14,6 +15,7 @@ from app.interview.service import (
     start_interview,
     start_response,
     submit_answer,
+    suggest_answer,
 )
 from app.interview.store import (
     AlreadyAnswered,
@@ -30,6 +32,7 @@ from app.schemas.interview import (
     GeneratedInterviewQuestion,
     InterviewCategory,
     InterviewStartRequest,
+    SuggestedAnswer,
     Verdict,
 )
 from tests.test_agent import FakeLLM, cv_with
@@ -130,6 +133,28 @@ def make_evaluation(
         unsupported_claims=unsupported or [],
         suggested_outline=["Contexto", "Decisión", "Resultado"],
         evidence_ids=evidence_ids if evidence_ids is not None else ["cv.md::0"],
+    )
+
+
+def make_suggestion(
+    answer=None,
+    evidence_ids=None,
+    caveats=None,
+    preparation_notes=None,
+):
+    return SuggestedAnswer(
+        answer=answer
+        or (
+            "En mi experiencia construí APIs con FastAPI y procesé documentos "
+            "con AWS Lambda y SQS, separando la recepción del procesamiento y "
+            "midiendo la antigüedad de la cola para detectar incidencias."
+        ),
+        outline=["Contexto", "Decisión", "Resultado"],
+        evidence_ids=evidence_ids if evidence_ids is not None else ["cv.md::0"],
+        caveats=caveats
+        or ["No afirmes haber operado Kubernetes: no aparece en el perfil."],
+        preparation_notes=preparation_notes
+        or ["Prepara una métrica concreta del procesamiento de documentos."],
     )
 
 
@@ -450,6 +475,173 @@ def test_store_evicts_oldest_session_when_full():
     assert store.count() == 2
     assert not store.exists(first.id)
     assert store.exists(second.id) and store.exists(third.id)
+
+
+# ---------- Respuesta sugerida ----------
+
+
+def test_suggestion_returns_grounded_draft(istore):
+    llm = FakeLLM(
+        {
+            "GeneratedInterviewPlan": [make_plan()],
+            "SuggestedAnswer": [make_suggestion()],
+        }
+    )
+    session = start(istore, llm)
+
+    result = suggest_answer(istore, session.id, "q1")
+
+    assert result.question_id == "q1"
+    assert result.answer.startswith("En mi experiencia")
+    assert result.outline == ["Contexto", "Decisión", "Resultado"]
+    assert result.caveats
+    assert result.preparation_notes
+    assert [e.id for e in result.evidence] == ["cv.md::0"]
+    assert session.suggestions["q1"].answer == result.answer
+
+
+def test_suggestion_is_cached(istore):
+    llm = FakeLLM(
+        {
+            "GeneratedInterviewPlan": [make_plan()],
+            "SuggestedAnswer": [make_suggestion()],
+        }
+    )
+    session = start(istore, llm)
+
+    first = suggest_answer(istore, session.id, "q1")
+    second = suggest_answer(istore, session.id, "q1")
+
+    assert first == second
+    assert len(llm.calls) == 2  # plan + una sola generación
+
+
+def test_suggestion_retries_when_evidence_id_is_invented(istore):
+    bad = make_suggestion(evidence_ids=["inventado::9"])
+    llm = FakeLLM(
+        {
+            "GeneratedInterviewPlan": [make_plan()],
+            "SuggestedAnswer": [bad, make_suggestion()],
+        }
+    )
+    session = start(istore, llm)
+
+    result = suggest_answer(istore, session.id, "q1")
+    assert result.evidence[0].id == "cv.md::0"
+    assert len(llm.calls) == 3
+    assert "inventado::9" in llm.calls[-1][1]
+
+
+def test_suggestion_requires_evidence_for_technical_question(istore):
+    bad = make_suggestion(evidence_ids=[])
+    llm = FakeLLM(
+        {
+            "GeneratedInterviewPlan": [make_plan()],
+            "SuggestedAnswer": [bad, make_suggestion()],
+        }
+    )
+    session = start(istore, llm)
+
+    suggest_answer(istore, session.id, "q1")
+    assert "al menos un evidence_id" in llm.calls[-1][1]
+
+
+def test_suggestion_fails_after_retries(istore):
+    bad = make_suggestion(evidence_ids=["inventado::9"])
+    llm = FakeLLM(
+        {
+            "GeneratedInterviewPlan": [make_plan()],
+            "SuggestedAnswer": [bad, bad],
+        }
+    )
+    session = start(istore, llm)
+
+    with pytest.raises(InterviewGenerationFailed):
+        suggest_answer(istore, session.id, "q1")
+    assert session.suggestions == {}
+
+
+def test_suggestion_for_gap_allows_no_evidence(istore):
+    suggestion = make_suggestion(
+        evidence_ids=[],
+        caveats=["No hay evidencia de Kubernetes en el perfil."],
+        preparation_notes=["Prepara un plan de aprendizaje concreto."],
+    )
+    llm = FakeLLM(
+        {
+            "GeneratedInterviewPlan": [make_plan()],
+            "SuggestedAnswer": [suggestion],
+        }
+    )
+    session = start(istore, llm)
+
+    result = suggest_answer(istore, session.id, "q5")
+    assert result.evidence == []
+    assert "Kubernetes" in result.caveats[0]
+
+
+def test_suggestion_rejects_answered_question(istore):
+    llm = FakeLLM(
+        {
+            "GeneratedInterviewPlan": [make_plan()],
+            "AnswerEvaluation": [make_evaluation()],
+        }
+    )
+    session = start(istore, llm)
+    submit_answer(istore, session.id, "q1", "Respuesta.")
+
+    with pytest.raises(AlreadyAnswered):
+        suggest_answer(istore, session.id, "q1")
+    assert len(llm.calls) == 2
+
+
+def test_suggestion_rejects_unknown_question(istore):
+    llm = FakeLLM({"GeneratedInterviewPlan": [make_plan()]})
+    session = start(istore, llm)
+
+    with pytest.raises(InvalidInterviewInput, match="no pertenece"):
+        suggest_answer(istore, session.id, "q99")
+
+
+def test_suggestion_prompt_wraps_question_and_expected_points(istore):
+    llm = FakeLLM(
+        {
+            "GeneratedInterviewPlan": [make_plan()],
+            "SuggestedAnswer": [make_suggestion()],
+        }
+    )
+    session = start(istore, llm)
+
+    suggest_answer(istore, session.id, "q1")
+
+    human = llm.calls[-1][1]
+    assert "<PREGUNTA>" in human and "</PREGUNTA>" in human
+    assert "<EVIDENCIAS>" in human and "<PUNTOS_ESPERADOS>" in human
+    assert "Punto esperado uno" in human
+    assert "primera persona" in SUGGEST_SYSTEM
+    assert "No inventes" in SUGGEST_SYSTEM
+
+
+def test_suggestion_text_is_not_logged(istore, caplog):
+    secret = "BORRADOR-SECRETO-QUE-NO-DEBE-LOGUEARSE"
+    suggestion = make_suggestion(
+        answer=(
+            f"{secret}. En mi experiencia construí APIs con FastAPI y procesé "
+            "documentos con AWS Lambda y SQS, midiendo la antigüedad de la cola."
+        )
+    )
+    llm = FakeLLM(
+        {
+            "GeneratedInterviewPlan": [make_plan()],
+            "SuggestedAnswer": [suggestion],
+        }
+    )
+    session = start(istore, llm)
+
+    with caplog.at_level(logging.DEBUG):
+        suggest_answer(istore, session.id, "q1")
+
+    assert secret not in caplog.text
 
 
 # ---------- Resumen ----------

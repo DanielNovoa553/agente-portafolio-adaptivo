@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 5_000_000
     interview_start_rate_limit: str = "5/minute"
     interview_answer_rate_limit: str = "30/minute"
+    interview_suggestion_rate_limit: str = "10/minute"
     interview_session_ttl_minutes: int = 120
     interview_max_sessions: int = 100
     interview_question_count: int = 6

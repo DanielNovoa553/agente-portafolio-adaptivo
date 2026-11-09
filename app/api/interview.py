@@ -11,6 +11,7 @@ from app.interview.service import (
     start_interview,
     start_response,
     submit_answer,
+    suggest_answer,
 )
 from app.interview.store import AlreadyAnswered, InterviewSessionStore, SessionNotFound
 from app.schemas.interview import (
@@ -18,6 +19,7 @@ from app.schemas.interview import (
     InterviewAnswerResponse,
     InterviewStartRequest,
     InterviewStartResponse,
+    InterviewSuggestionResponse,
     InterviewSummary,
 )
 
@@ -62,6 +64,29 @@ def answer_question(
 ):
     try:
         return submit_answer(store, session_id, body.question_id, body.answer)
+    except SessionNotFound as exc:
+        raise HTTPException(404, SESSION_NOT_FOUND) from exc
+    except AlreadyAnswered as exc:
+        raise HTTPException(409, "Ya respondiste esta pregunta.") from exc
+    except InvalidInterviewInput as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except InterviewGenerationFailed as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+@router.post(
+    "/interview/sessions/{session_id}/questions/{question_id}/suggestion",
+    response_model=InterviewSuggestionResponse,
+)
+@limiter.limit(settings.interview_suggestion_rate_limit)
+def suggest_interview_answer(
+    request: Request,
+    session_id: str,
+    question_id: str,
+    store: InterviewSessionStore = Depends(interview_store_dep),
+):
+    try:
+        return suggest_answer(store, session_id, question_id)
     except SessionNotFound as exc:
         raise HTTPException(404, SESSION_NOT_FOUND) from exc
     except AlreadyAnswered as exc:

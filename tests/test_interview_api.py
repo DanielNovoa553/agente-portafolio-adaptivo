@@ -8,7 +8,14 @@ from app.core.limiter import limiter
 from app.interview.store import InterviewSessionStore
 from app.main import app
 from tests.test_agent import FakeLLM
-from tests.test_interview import DOCUMENT, EVIDENCE, JOB, make_evaluation, make_plan
+from tests.test_interview import (
+    DOCUMENT,
+    EVIDENCE,
+    JOB,
+    make_evaluation,
+    make_plan,
+    make_suggestion,
+)
 
 
 def payload(**overrides):
@@ -193,6 +200,7 @@ def test_interview_routes_require_consent(make_client):
     )
     assert c.get("/interview/sessions/x/summary").status_code == 403
     assert c.delete("/interview/sessions/x").status_code == 403
+    assert c.post("/interview/sessions/x/questions/q1/suggestion").status_code == 403
 
 
 def test_interview_rejects_unknown_model(istore, monkeypatch):
@@ -233,6 +241,153 @@ def test_interview_start_rate_limit_returns_429(make_client):
     codes = [c.post("/interview/sessions", json=payload()).status_code for _ in range(6)]
     assert codes[:5] == [201] * 5
     assert codes[-1] == 429
+
+
+def create_session(c, llm=None):
+    return c.post("/interview/sessions", json=payload()).json()["session_id"]
+
+
+def test_suggestion_returns_grounded_draft(make_client):
+    llm = FakeLLM(
+        {
+            "GeneratedInterviewPlan": [make_plan()],
+            "SuggestedAnswer": [make_suggestion()],
+        }
+    )
+    c = make_client(llm)
+    sid = create_session(c)
+
+    r = c.post(f"/interview/sessions/{sid}/questions/q1/suggestion")
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["question_id"] == "q1"
+    assert body["answer"].startswith("En mi experiencia")
+    assert body["outline"] == ["Contexto", "Decisión", "Resultado"]
+    assert body["caveats"]
+    assert body["preparation_notes"]
+    assert [e["id"] for e in body["evidence"]] == ["cv.md::0"]
+
+
+def test_suggestion_is_cached(make_client):
+    llm = FakeLLM(
+        {
+            "GeneratedInterviewPlan": [make_plan()],
+            "SuggestedAnswer": [make_suggestion()],
+        }
+    )
+    c = make_client(llm)
+    sid = create_session(c)
+
+    first = c.post(f"/interview/sessions/{sid}/questions/q1/suggestion")
+    second = c.post(f"/interview/sessions/{sid}/questions/q1/suggestion")
+
+    assert first.status_code == 200
+    assert first.json() == second.json()
+    assert len(llm.calls) == 2  # plan + una sola generación
+
+
+def test_suggestion_unknown_session_is_404(make_client):
+    r = make_client(FakeLLM({})).post(
+        "/interview/sessions/noexiste/questions/q1/suggestion"
+    )
+    assert r.status_code == 404
+    assert "expirada" in r.json()["detail"]
+
+
+def test_suggestion_answered_question_is_409(make_client):
+    llm = FakeLLM(
+        {
+            "GeneratedInterviewPlan": [make_plan()],
+            "AnswerEvaluation": [make_evaluation()],
+        }
+    )
+    c = make_client(llm)
+    sid = create_session(c)
+    assert (
+        c.post(
+            f"/interview/sessions/{sid}/answers",
+            json={"question_id": "q1", "answer": "Mi respuesta."},
+        ).status_code
+        == 200
+    )
+
+    r = c.post(f"/interview/sessions/{sid}/questions/q1/suggestion")
+
+    assert r.status_code == 409
+    assert "Ya respondiste" in r.json()["detail"]
+
+
+def test_suggestion_unknown_question_is_422(make_client):
+    llm = FakeLLM({"GeneratedInterviewPlan": [make_plan()]})
+    c = make_client(llm)
+    sid = create_session(c)
+
+    r = c.post(f"/interview/sessions/{sid}/questions/q99/suggestion")
+
+    assert r.status_code == 422
+    assert "no pertenece" in r.json()["detail"]
+
+
+def test_suggestion_failure_is_502(make_client):
+    bad = make_suggestion(evidence_ids=["inventado::9"])
+    llm = FakeLLM(
+        {
+            "GeneratedInterviewPlan": [make_plan()],
+            "SuggestedAnswer": [bad, bad],
+        }
+    )
+    c = make_client(llm)
+    sid = create_session(c)
+
+    r = c.post(f"/interview/sessions/{sid}/questions/q1/suggestion")
+
+    assert r.status_code == 502
+    assert "borrador" in r.json()["detail"]
+
+
+def test_suggestion_rate_limit_returns_429(make_client):
+    llm = FakeLLM(
+        {
+            "GeneratedInterviewPlan": [make_plan()],
+            "SuggestedAnswer": [make_suggestion()],
+        }
+    )
+    c = make_client(llm)
+    sid = create_session(c)
+    limiter.enabled = True
+    limiter.reset()
+
+    codes = [
+        c.post(f"/interview/sessions/{sid}/questions/q1/suggestion").status_code
+        for _ in range(11)
+    ]
+    assert codes[:10] == [200] * 10
+    assert codes[-1] == 429
+
+
+def test_suggestion_text_is_not_logged(make_client, caplog):
+    secret = "BORRADOR-SECRETO-QUE-NO-DEBE-LOGUEARSE"
+    suggestion = make_suggestion(
+        answer=(
+            f"{secret}. En mi experiencia construí APIs con FastAPI y procesé "
+            "documentos con AWS Lambda y SQS, midiendo la antigüedad de la cola."
+        )
+    )
+    llm = FakeLLM(
+        {
+            "GeneratedInterviewPlan": [make_plan()],
+            "SuggestedAnswer": [suggestion],
+        }
+    )
+    c = make_client(llm)
+    sid = create_session(c)
+
+    with caplog.at_level(logging.DEBUG):
+        r = c.post(f"/interview/sessions/{sid}/questions/q1/suggestion")
+
+    assert r.status_code == 200
+    assert secret not in caplog.text
 
 
 def test_answer_text_is_not_logged(make_client, caplog):

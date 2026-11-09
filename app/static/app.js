@@ -415,6 +415,8 @@ const CRITERION_LABEL = {
   technical_depth: "Profundidad técnica",
 };
 
+let suggestionSeq = 0;
+
 function emptyInterview() {
   return {
     sessionId: null,
@@ -467,6 +469,7 @@ function resetInterview({ deleteSession = true } = {}) {
   $("answerText").readOnly = false;
   $("answerCounter").textContent = "0 / 5000";
   $("evaluateAnswerBtn").disabled = true;
+  clearSuggestion();
   setInterviewBadge();
   showInterviewState("intro");
   updateInterviewAvailability();
@@ -485,6 +488,150 @@ function updateAnswerState() {
   const value = $("answerText").value;
   $("answerCounter").textContent = `${value.length} / 5000`;
   $("evaluateAnswerBtn").disabled = !value.trim();
+}
+
+function clearSuggestion() {
+  suggestionSeq += 1;
+  const card = $("interviewSuggestion");
+  card.replaceChildren();
+  card.hidden = true;
+  setLoading($("suggestAnswerBtn"), false);
+}
+
+function suggestionBlock(title, icon, items, cls = "", ordered = false) {
+  if (!items || !items.length) return null;
+  return el("div", { cls: `suggestion-block ${cls}`.trim() }, [
+    el("h5", {}, [
+      el("i", { cls: `bi ${icon} me-1` }),
+      document.createTextNode(title),
+    ]),
+    el(ordered ? "ol" : "ul", { cls: "mb-0" }, items.map((t) => el("li", { text: t }))),
+  ]);
+}
+
+function renderSuggestion(data) {
+  const blocks = [
+    el("div", { cls: "suggestion-head" }, [
+      el("h4", {}, [
+        el("i", { cls: "bi bi-stars me-1" }),
+        document.createTextNode("Borrador de respuesta"),
+      ]),
+      el("span", { cls: "suggestion-ai", text: "Generado por IA" }),
+    ]),
+    el("p", {
+      cls: "suggestion-notice",
+      text: "Borrador generado por IA. Revísalo y ajústalo antes de usarlo.",
+    }),
+    el("p", { cls: "suggestion-answer", text: data.answer }),
+    suggestionBlock("Esquema", "bi-list-ol", data.outline, "", true),
+    suggestionBlock(
+      "Avisos para no inventar",
+      "bi-exclamation-triangle",
+      data.caveats,
+      "warn"
+    ),
+    suggestionBlock(
+      "Notas de preparación",
+      "bi-journal-check",
+      data.preparation_notes,
+      "ok"
+    ),
+  ].filter(Boolean);
+
+  if (data.evidence.length) {
+    const chips = el("div", { cls: "interview-evidence-chips" });
+    data.evidence.forEach((e) => {
+      const chip = el("span", { cls: "interview-evidence-chip", text: e.id });
+      chip.title = e.text;
+      chips.append(chip);
+    });
+    blocks.push(
+      el("div", { cls: "suggestion-block" }, [
+        el("h5", {}, [
+          el("i", { cls: "bi bi-link-45deg me-1" }),
+          document.createTextNode("Evidencias citadas"),
+        ]),
+        chips,
+      ])
+    );
+  }
+
+  const actions = el("div", { cls: "d-flex gap-2 flex-wrap mt-3" });
+  const useBtn = el("button", { cls: "btn btn-sm btn-primary", attrs: { type: "button" } }, [
+    el("i", { cls: "bi bi-arrow-down-square me-1" }),
+    document.createTextNode("Usar borrador"),
+  ]);
+  useBtn.addEventListener("click", () => useSuggestion(data.answer));
+  const copyBtn = el("button", {
+    cls: "btn btn-sm btn-outline-secondary",
+    attrs: { type: "button" },
+  }, [
+    el("i", { cls: "bi bi-clipboard me-1" }),
+    document.createTextNode("Copiar"),
+  ]);
+  copyBtn.addEventListener("click", () => copySuggestion(data.answer));
+  actions.append(useBtn, copyBtn);
+  blocks.push(actions);
+
+  const card = $("interviewSuggestion");
+  card.replaceChildren(...blocks);
+  card.hidden = false;
+}
+
+async function suggestAnswer() {
+  const iv = state.interview;
+  const index = iv.current;
+  const sessionId = iv.sessionId;
+  const question = iv.questions[index];
+  if (!sessionId || !question) return;
+  const btn = $("suggestAnswerBtn");
+  if (btn.disabled) return;
+
+  const seq = suggestionSeq + 1;
+  suggestionSeq = seq;
+  setLoading(btn, true);
+  $("interviewAnswerError").hidden = true;
+  try {
+    const data = await api(
+      `/interview/sessions/${encodeURIComponent(sessionId)}/questions/${encodeURIComponent(question.id)}/suggestion`,
+      { method: "POST" }
+    );
+    if (seq !== suggestionSeq || iv.sessionId !== sessionId || iv.current !== index) return;
+    if (iv.answered.includes(question.id) || data.question_id !== question.id) return;
+    renderSuggestion(data);
+  } catch (e) {
+    if (seq !== suggestionSeq) return;
+    if (handleInterviewError(e)) return;
+    $("interviewAnswerErrorText").textContent = e.message;
+    $("interviewAnswerError").hidden = false;
+  } finally {
+    if (seq === suggestionSeq) setLoading(btn, false);
+  }
+}
+
+function useSuggestion(text) {
+  const area = $("answerText");
+  if (
+    area.value.trim() &&
+    !window.confirm("Ya hay texto en tu respuesta. ¿Quieres reemplazarlo con el borrador?")
+  ) {
+    return;
+  }
+  area.value = text;
+  updateAnswerState();
+  area.focus();
+  area.setSelectionRange(text.length, text.length);
+  area.scrollIntoView({ behavior: "smooth", block: "center" });
+  toast("Borrador insertado. Revísalo y ajústalo antes de evaluar.");
+}
+
+async function copySuggestion(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("Borrador copiado al portapapeles");
+  } catch {
+    toast("No se pudo copiar el borrador", "err");
+  }
 }
 
 function renderInterviewEvidence(ids) {
@@ -522,6 +669,7 @@ function showQuestion(index) {
   $("answerForm").hidden = false;
   $("answerText").readOnly = false;
   $("answerText").value = "";
+  clearSuggestion();
   updateAnswerState();
   showInterviewState("active");
   $("answerText").focus();
@@ -700,6 +848,7 @@ async function submitInterviewAnswer() {
     iv.nextQuestionId = data.next_question_id;
     renderFeedback(data);
     $("answerForm").hidden = true;
+    clearSuggestion();
     $("interviewFeedback").hidden = false;
     $("interviewNav").hidden = false;
     $("nextQuestionBtn").hidden = !data.next_question_id;
@@ -991,6 +1140,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("startInterviewBtn").addEventListener("click", startInterview);
   $("interviewRetryBtn").addEventListener("click", startInterview);
   $("evaluateAnswerBtn").addEventListener("click", submitInterviewAnswer);
+  $("suggestAnswerBtn").addEventListener("click", suggestAnswer);
   $("answerText").addEventListener("input", updateAnswerState);
   $("answerText").addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {

@@ -5,6 +5,7 @@
 - **Alcance:** MVP local, un usuario
 - **Depende de:** generación de documentos (fase 4b)
 - **Referencias:** `README.md`, `AGENTS.md`, `app/agent/graph.py`, `app/static/app.js`
+- **Extensión:** respuestas sugeridas (`docs/feature-respuestas-sugeridas.md`)
 
 ## 1. Resumen
 

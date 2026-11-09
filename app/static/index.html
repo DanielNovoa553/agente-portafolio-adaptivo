@@ -208,8 +208,9 @@
                 </div>
                 <p class="interview-note">
                   <i class="bi bi-shield-lock me-1"></i>
-                  Tus respuestas se envían a Gemini para evaluarlas y se mantienen solo en memoria
-                  mientras la sesión está activa. No se guardan en los logs.
+                  Tus respuestas se envían a Gemini para evaluarlas y los borradores se generan a
+                  partir de la oferta, el documento y tus evidencias. Todo se mantiene solo en
+                  memoria mientras la sesión está activa y no se guarda en los logs.
                 </p>
               </div>
 
@@ -260,7 +261,13 @@
                 </div>
 
                 <div id="answerForm" class="mt-3">
-                  <label for="answerText" class="form-label small fw-semibold">Tu respuesta</label>
+                  <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-1">
+                    <label for="answerText" class="form-label small fw-semibold mb-0">Tu respuesta</label>
+                    <button class="btn btn-sm btn-outline-primary" id="suggestAnswerBtn" type="button">
+                      <span class="btn-label"><i class="bi bi-stars me-1"></i>Sugerir respuesta</span>
+                    </button>
+                  </div>
+                  <div class="interview-suggestion" id="interviewSuggestion" aria-live="polite" hidden></div>
                   <textarea class="form-control" id="answerText" rows="7" maxlength="5000"
                     placeholder="Escribe tu respuesta como lo harías en la entrevista…"></textarea>
                   <div class="d-flex justify-content-between align-items-center mt-2 gap-2 flex-wrap">
@@ -308,15 +315,15 @@
         <div class="modal-body small">
           <p>Para generar documentos y practicar entrevistas, esta aplicación procesa el contenido de los archivos que subas (CV, proyectos, certificaciones), de las ofertas que pegues y de las respuestas que escribas. Esa información puede incluir <strong>datos personales y sensibles</strong>.</p>
           <ul>
-            <li><strong>Envío a Google Gemini:</strong> fragmentos de tus documentos, la oferta y tus respuestas de entrevista se envían a la API de Google para crear embeddings, generar texto y evaluar las respuestas. En el nivel gratuito, Google puede usar estos datos para mejorar sus productos y personal autorizado podría revisarlos.</li>
+            <li><strong>Envío a Google Gemini:</strong> fragmentos de tus documentos, la oferta y tus respuestas de entrevista se envían a la API de Google para crear embeddings, generar texto y evaluar las respuestas. Los borradores de respuesta se generan con la oferta, el documento y las evidencias, sin incluir el texto de tus respuestas. En el nivel gratuito, Google puede usar estos datos para mejorar sus productos y personal autorizado podría revisarlos.</li>
             <li><strong>Almacenamiento:</strong> tus documentos se guardan como fragmentos en la base vectorial del servidor donde se ejecuta la app. Puedes borrarlos en cualquier momento desde la lista de fuentes.</li>
-            <li><strong>Entrevistas:</strong> las respuestas se mantienen solo en memoria mientras la sesión está activa (máximo 2 horas). Se eliminan al terminar la entrevista, al expirar la sesión o al reiniciar el servidor. No se guardan en la base vectorial ni en los logs.</li>
+            <li><strong>Entrevistas:</strong> el texto de tus respuestas no se guarda en el servidor: se usa para evaluarlas y no se incluye en los logs. Las evaluaciones y los borradores generados se mantienen solo en memoria mientras la sesión está activa (máximo 2 horas). Se eliminan al terminar la entrevista, al expirar la sesión o al reiniciar el servidor.</li>
             <li><strong>Recomendación:</strong> no subas documentos ni escribas respuestas con datos que no quieras compartir (número de identificación, domicilio, datos de salud, etc.).</li>
             <li>Los resultados son generados por IA: revísalos antes de usarlos.</li>
           </ul>
           <div class="form-check mt-3">
             <input class="form-check-input" type="checkbox" id="privacyCheck">
-            <label class="form-check-label" for="privacyCheck">Entiendo lo anterior y acepto el tratamiento de mis datos, incluido su envío a Google Gemini para generar documentos y evaluar mis respuestas de entrevista.</label>
+            <label class="form-check-label" for="privacyCheck">Entiendo lo anterior y acepto el tratamiento de mis datos, incluido su envío a Google Gemini para generar documentos, evaluar mis respuestas de entrevista y generar borradores de respuesta.</label>
           </div>
         </div>
         <div class="modal-footer">

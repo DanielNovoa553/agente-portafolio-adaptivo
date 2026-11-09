@@ -92,6 +92,14 @@ class AnswerEvaluation(BaseModel):
     evidence_ids: list[str] = []
 
 
+class SuggestedAnswer(BaseModel):
+    answer: str = Field(min_length=40, max_length=4000)
+    outline: list[str] = Field(min_length=3, max_length=6)
+    evidence_ids: list[str] = []
+    caveats: list[str] = Field(default_factory=list, max_length=5)
+    preparation_notes: list[str] = Field(default_factory=list, max_length=5)
+
+
 class InterviewStartRequest(BaseModel):
     job_text: str = Field(min_length=50, max_length=8000)
     output_type: OutputType
@@ -129,6 +137,15 @@ class InterviewAnswerResponse(BaseModel):
     answered: int
     total: int
     next_question_id: str | None
+
+
+class InterviewSuggestionResponse(BaseModel):
+    question_id: str
+    answer: str
+    outline: list[str]
+    caveats: list[str]
+    preparation_notes: list[str]
+    evidence: list[Evidence]
 
 
 class InterviewSummary(BaseModel):

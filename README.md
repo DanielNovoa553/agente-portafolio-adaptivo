@@ -1,6 +1,6 @@
 # 🎯 Agente de Portafolio Adaptativo y Preparador de Entrevistas
 
-Agente de IA que, a partir de tu perfil profesional (CV, proyectos, certificaciones) y una oferta de trabajo, **genera documentos personalizados y validados**: CV adaptado, resumen de proyectos priorizados y borrador de carta de presentación. Después te ayuda a **practicar la entrevista técnica** con preguntas basadas en esa oferta y feedback contrastado con la evidencia de tu perfil.
+Agente de IA que, a partir de tu perfil profesional (CV, proyectos, certificaciones) y una oferta de trabajo, **genera documentos personalizados y validados**: CV adaptado, resumen de proyectos priorizados y borrador de carta de presentación. Después te ayuda a **practicar la entrevista técnica** con preguntas basadas en esa oferta, feedback contrastado con la evidencia de tu perfil y borradores de respuesta que puedes revisar y ajustar.
 
 <p align="center">
   <img src="docs/demo.gif" alt="Demo: pegar una oferta, generar un CV adaptado y ver las evidencias" width="900">
@@ -27,8 +27,9 @@ Personalizar un CV y una carta para cada oferta es lento y repetitivo. Este sist
 8. **Preparador de entrevistas**: genera entre 5 y 10 preguntas (6 por defecto) a partir de la oferta y del documento generado, cubriendo categorías técnica, proyecto, conductual, encaje y carencias.
 9. **Evaluación de respuestas**: cada respuesta se contrasta con la evidencia del perfil y se puntúa con cinco criterios (relevancia, alineación con la evidencia, especificidad, estructura y profundidad técnica). El feedback incluye fortalezas, carencias, afirmaciones no respaldadas y un esquema sugerido.
 10. **Resumen de la práctica**: nota global y por categoría, fortalezas y carencias recurrentes, próximos pasos y preguntas pendientes.
-11. **Privacidad de las respuestas**: las sesiones viven en memoria con TTL de 120 minutos y máximo de 100; el texto de las respuestas no se guarda en la base vectorial ni en los logs.
-12. **Producción**: rate limiting (slowapi), logs JSON con `X-Request-ID`, errores claros (404/409/413/415/422/429/502/503) y mensaje amistoso cuando Gemini está saturado.
+11. **Respuesta sugerida**: antes de responder, pide un borrador completo con esquema, evidencias citadas, avisos para no inventar y notas de preparación. El usuario decide si lo inserta o lo copia; nunca se envía solo.
+12. **Privacidad de las respuestas**: las sesiones viven en memoria con TTL de 120 minutos y máximo de 100; el texto de las respuestas no se guarda en la base vectorial ni en los logs, y los borradores se cachean solo en la sesión.
+13. **Producción**: rate limiting (slowapi), logs JSON con `X-Request-ID`, errores claros (404/409/413/415/422/429/502/503) y mensaje amistoso cuando Gemini está saturado.
 
 ## Alcance del proyecto
 
@@ -46,6 +47,7 @@ Una sola página (Bootstrap 5 + JS vanilla, sin build) servida por FastAPI desde
 - Ver el resultado junto con las evidencias del perfil usadas.
 - Copiar o descargar el documento en Markdown.
 - Practicar la entrevista desde la pestaña **Entrevista**, habilitada al generar un documento: elegir el número de preguntas, responder con progreso visual y recibir feedback y resumen.
+- Pedir **Sugerir respuesta** antes de contestar: la tarjeta muestra el borrador, el esquema, los avisos y las notas de preparación, con botones **Usar borrador** y **Copiar**. El borrador se inserta solo tras confirmación y nunca se evalúa automáticamente.
 - Modo claro/oscuro, estados de carga y mensajes de error claros.
 
 ## API
@@ -62,10 +64,11 @@ Todas las rutas salvo `/health` y `/models` exigen la cabecera `X-Privacy-Consen
 | `POST` | `/generate` | Generar CV, proyectos o carta; devuelve `evidence` usada y `retrieved_evidence` recuperada. |
 | `POST` | `/interview/sessions` | Crear una sesión de entrevista (`question_count` 5–10; modelo opcional con `?model=`). |
 | `POST` | `/interview/sessions/{id}/answers` | Evaluar una respuesta; una sola vez por pregunta. |
+| `POST` | `/interview/sessions/{id}/questions/{question_id}/suggestion` | Generar o recuperar el borrador de respuesta de una pregunta pendiente. |
 | `GET` | `/interview/sessions/{id}/summary` | Resumen agregado de la práctica. |
 | `DELETE` | `/interview/sessions/{id}` | Terminar y borrar la sesión. |
 
-Códigos de la entrevista: `404` sesión inexistente o expirada, `409` pregunta ya respondida, `422` entrada inválida (documento, evidencia, pregunta o respuesta) y `502` si el LLM no produce un plan o una evaluación válidos tras los reintentos.
+Códigos de la entrevista: `404` sesión inexistente o expirada, `409` pregunta ya respondida, `422` entrada inválida (documento, evidencia, pregunta o respuesta), `429` rate limit y `502` si el LLM no produce un plan, una evaluación o un borrador válidos tras los reintentos.
 
 ## Arquitectura
 
@@ -85,7 +88,7 @@ flowchart LR
     E --> API --> U
 ```
 
-La entrevista reutiliza ese contexto: `POST /interview/sessions` valida el documento y la evidencia, pide al LLM un plan con categorías obligatorias y `evidence_ids` reales, y guarda la sesión en memoria. Cada respuesta se evalúa contra el mismo material con cinco criterios; el servidor calcula la nota y el veredicto, y el resumen se agrega de forma determinista sin una llamada extra al LLM.
+La entrevista reutiliza ese contexto: `POST /interview/sessions` valida el documento y la evidencia, pide al LLM un plan con categorías obligatorias y `evidence_ids` reales, y guarda la sesión en memoria. Cada respuesta se evalúa contra el mismo material con cinco criterios; el servidor calcula la nota y el veredicto, y el resumen se agrega de forma determinista sin una llamada extra al LLM. Para las preguntas pendientes, el endpoint de sugerencia genera un borrador con el mismo modelo fijado en la sesión, valida que los `evidence_ids` existan y lo cachea en memoria para no repetir la llamada.
 
 ## Stack
 
@@ -118,7 +121,7 @@ agente-portafolio-adaptivo/
 ├── eval/                  # cases.json, interview_cases.json y reportes
 ├── data/profile/          # tu perfil en Markdown (ignorado por git)
 ├── chroma_db/             # índice vectorial local (ignorado por git)
-└── tests/                 # 67 tests (sin red: LLM y embeddings falsos)
+└── tests/                 # 85 tests (sin red: LLM y embeddings falsos)
 ```
 
 ## Decisiones de diseño
@@ -146,7 +149,7 @@ Abre `http://localhost:8000`, acepta el aviso de privacidad y sube tus archivos 
 Otros comandos:
 
 ```bash
-pytest -q                                           # 67 tests, offline (~5 s)
+pytest -q                                           # 85 tests, offline (~5 s)
 python -m scripts.list_models                       # modelos Gemini disponibles
 python -m scripts.evaluate --limit 3                # smoke de la evaluación de documentos
 python -m scripts.evaluate_interview --limit 3      # smoke de la evaluación de entrevista
@@ -182,7 +185,7 @@ Las fases previstas para la versión local están terminadas:
 ### Fase 4: API y calidad
 - [x] Endpoints `POST /ingest`, `GET /sources`, `DELETE /sources/{name}` y `POST /generate`
 - [x] Rate limiting (slowapi), logs JSON estructurados con `X-Request-ID`, manejo de errores (413/415/422/429/502/503)
-- [x] Tests de endpoints (incluidos en los 67 tests actuales)
+- [x] Tests de endpoints (incluidos en los 85 tests actuales)
 - [x] Set de evaluación de 20 ejemplos (`eval/cases.json`, 15 con encaje y 5 sin encaje) y script `python -m scripts.evaluate`
 - [x] Umbral `MIN_TOP_SCORE` calibrado con la evaluación (las ofertas sin encaje pasaron de 0/5 a 5/5 rechazadas)
 
@@ -215,9 +218,16 @@ Modelo `gemini-3.1-flash-lite`, embeddings `gemini-embedding-001`. Reporte compl
 - [x] Sesiones en memoria con TTL, máximo de sesiones, una respuesta por pregunta y borrado explícito; el texto de la respuesta no se persiste ni se loguea
 - [x] Endpoints `POST /interview/sessions`, `POST /interview/sessions/{id}/answers`, `GET /interview/sessions/{id}/summary` y `DELETE /interview/sessions/{id}`
 - [x] Pestaña **Entrevista** en la interfaz, habilitada al generar un documento, con progreso, feedback y resumen
-- [x] Tests de dominio y de API de la entrevista, offline con LLM falso (67 tests en total)
+- [x] Tests de dominio y de API de la entrevista, offline con LLM falso (85 tests en total)
 - [x] Set de 8 casos y script `python -m scripts.evaluate_interview` para medir plan, evaluación, evidencias y separación entre respuestas fuertes y débiles
-- [x] Aviso de privacidad actualizado a la versión 2 para cubrir la evaluación de respuestas
+- [x] Aviso de privacidad actualizado a la versión 2 para cubrir la evaluación de respuestas y la generación de borradores
+
+### Fase 5b: Respuestas sugeridas
+- [x] Endpoint `POST /interview/sessions/{id}/questions/{question_id}/suggestion` para preguntas pendientes, con el modelo fijado en la sesión
+- [x] Borrador en primera persona con esquema, evidencias citadas, avisos y notas de preparación; validación de `evidence_ids` y evidencia obligatoria en preguntas técnicas o de proyecto
+- [x] Caché en memoria por pregunta, rate limit de `10/minute` y errores `404/409/422/429/502`
+- [x] Tarjeta **Sugerir respuesta** con **Usar borrador** (confirmación si ya hay texto) y **Copiar**; nunca se evalúa automáticamente
+- [x] Tests de dominio y de API, offline con LLM falso, incluido el no logueo del borrador
 
 ## Posibles mejoras futuras
 
@@ -226,6 +236,7 @@ El despliegue público no forma parte de la versión completada y no está compr
 - **Aislamiento y privacidad:** diseñar un modo demo que no exponga ni permita modificar perfiles de otros usuarios; revisar también el aviso de privacidad para ese uso.
 - **Control de cuota:** limitar las generaciones globales además del rate limit por IP, o evaluar BYOK para que cada persona use su propia API key de Gemini.
 - **Despliegue:** preparar Docker y elegir un proveedor, teniendo en cuenta la persistencia del índice vectorial y las limitaciones de los planes gratuitos.
+- **Calidad de los borradores:** ampliar `scripts.evaluate_interview` con casos que midan fidelidad, utilidad y ausencia de invenciones en las respuestas sugeridas.
 
 ## Licencia
 

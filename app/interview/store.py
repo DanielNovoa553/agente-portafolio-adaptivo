@@ -6,7 +6,12 @@ from typing import Any, Callable
 
 from app.agent.state import OutputType
 from app.schemas.evidence import Evidence
-from app.schemas.interview import AnswerEvaluation, InterviewPlanInternal, Verdict
+from app.schemas.interview import (
+    AnswerEvaluation,
+    InterviewPlanInternal,
+    SuggestedAnswer,
+    Verdict,
+)
 
 
 def utcnow() -> datetime:
@@ -34,6 +39,7 @@ class InterviewSession:
     llm: Any  # instancia real o fake; nunca se serializa
     model_id: str | None
     answers: dict[str, AnswerRecord] = field(default_factory=dict)
+    suggestions: dict[str, SuggestedAnswer] = field(default_factory=dict)
 
 
 class SessionNotFound(Exception):
@@ -131,6 +137,25 @@ class InterviewSessionStore:
         with self._lock:
             session = self._get_locked(session_id, now)
             return dict(session.answers)
+
+    def get_suggestion(
+        self, session_id: str, question_id: str
+    ) -> SuggestedAnswer | None:
+        now = self._clock()
+        with self._lock:
+            session = self._get_locked(session_id, now)
+            return session.suggestions.get(question_id)
+
+    def record_suggestion(
+        self, session_id: str, question_id: str, suggestion: SuggestedAnswer
+    ) -> InterviewSession:
+        now = self._clock()
+        with self._lock:
+            session = self._get_locked(session_id, now)
+            if question_id in session.answers:
+                raise AlreadyAnswered
+            session.suggestions[question_id] = suggestion
+            return session
 
     def delete(self, session_id: str) -> bool:
         now = self._clock()

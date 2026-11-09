@@ -11,10 +11,13 @@ from app.core.config import settings
 from app.interview.prompts import (
     EVAL_SYSTEM,
     PLAN_SYSTEM,
+    SUGGEST_SYSTEM,
     build_evaluation_prompt,
     build_plan_prompt,
+    build_suggestion_prompt,
     evaluation_feedback,
     plan_feedback,
+    suggestion_feedback,
 )
 from app.interview.store import (
     AlreadyAnswered,
@@ -36,7 +39,9 @@ from app.schemas.interview import (
     InterviewQuestionInternal,
     InterviewStartRequest,
     InterviewStartResponse,
+    InterviewSuggestionResponse,
     InterviewSummary,
+    SuggestedAnswer,
     Verdict,
 )
 
@@ -44,9 +49,11 @@ logger = logging.getLogger("interview")
 
 MAX_PLAN_ATTEMPTS = 2
 MAX_EVALUATION_ATTEMPTS = 2
+MAX_SUGGESTION_ATTEMPTS = 2
 MIN_QUESTIONS = 5
 MAX_QUESTIONS = 10
 MIN_ANSWER_CHARS = 1
+MIN_SUGGESTION_CHARS = 40
 
 TECHNICAL_CATEGORIES = {InterviewCategory.technical, InterviewCategory.project}
 REQUIRED_CATEGORIES = (
@@ -279,6 +286,72 @@ def evaluate_with_llm(
     )
 
 
+def _suggestion_error(
+    suggestion: SuggestedAnswer,
+    question: InterviewQuestionInternal,
+    valid_ids: set[str],
+) -> str | None:
+    if len(suggestion.answer.strip()) < MIN_SUGGESTION_CHARS:
+        return f"El borrador debe tener al menos {MIN_SUGGESTION_CHARS} caracteres."
+    unknown = set(suggestion.evidence_ids) - valid_ids
+    if unknown:
+        return (
+            f"El borrador cita evidence_ids inexistentes: {sorted(unknown)}. "
+            f"Usa solo: {sorted(valid_ids)}"
+        )
+    if question.category in TECHNICAL_CATEGORIES and not suggestion.evidence_ids:
+        return (
+            f"La pregunta es {question.category.value} y el borrador debe citar "
+            "al menos un evidence_id."
+        )
+    return None
+
+
+def generate_suggested_answer(
+    session: InterviewSession,
+    question: InterviewQuestionInternal,
+) -> SuggestedAnswer:
+    prompt = build_suggestion_prompt(
+        job_text=session.job_text,
+        output_type=session.output_type,
+        document=session.document,
+        evidence_text=format_evidence(session.evidence),
+        question=question.question,
+        category=question.category.value,
+        difficulty=question.difficulty.value,
+        expected_points=question.expected_points,
+    )
+    valid_ids = {e.id for e in session.evidence}
+    last_error = ""
+    for attempt in range(1, MAX_SUGGESTION_ATTEMPTS + 1):
+        human = prompt
+        if last_error:
+            human += f"\n\n{suggestion_feedback(last_error)}"
+        try:
+            suggestion = session.llm.with_structured_output(SuggestedAnswer).invoke(
+                [("system", SUGGEST_SYSTEM), ("human", human)]
+            )
+        except ValidationError as exc:
+            last_error = f"salida con formato inválido: {exc.errors()[:3]}"
+            continue
+        error = _suggestion_error(suggestion, question, valid_ids)
+        if error is None:
+            return suggestion.model_copy(
+                update={
+                    "answer": suggestion.answer.strip(),
+                    "evidence_ids": list(dict.fromkeys(suggestion.evidence_ids)),
+                }
+            )
+        last_error = error
+    logger.warning(
+        "interview suggestion generation failed",
+        extra={"attempts": MAX_SUGGESTION_ATTEMPTS, "error": last_error[:300]},
+    )
+    raise InterviewGenerationFailed(
+        "No se pudo generar un borrador de respuesta. Inténtalo de nuevo."
+    )
+
+
 def score_answer(evaluation: AnswerEvaluation, category: InterviewCategory) -> int:
     weights = TECHNICAL_WEIGHTS if category in TECHNICAL_CATEGORIES else GENERAL_WEIGHTS
     total = sum(weights[c.criterion] * c.score for c in evaluation.criteria)
@@ -424,6 +497,47 @@ def submit_answer(
         answered=len(answered),
         total=len(session.plan.questions),
         next_question_id=_next_question_id(session, answered),
+    )
+
+
+def suggest_answer(
+    store: InterviewSessionStore,
+    session_id: str,
+    question_id: str,
+) -> InterviewSuggestionResponse:
+    session = store.get(session_id)
+    question = next((q for q in session.plan.questions if q.id == question_id), None)
+    if question is None:
+        raise InvalidInterviewInput("La pregunta no pertenece a esta sesión.")
+    if question_id in store.snapshot_answers(session_id):
+        raise AlreadyAnswered
+
+    started = time.perf_counter()
+    suggestion = store.get_suggestion(session_id, question_id)
+    cached = suggestion is not None
+    if suggestion is None:
+        suggestion = generate_suggested_answer(session, question)
+        store.record_suggestion(session_id, question_id, suggestion)
+
+    logger.info(
+        "interview suggestion served",
+        extra={
+            "session_id": session_id[:8],
+            "question_id": question_id,
+            "cached": cached,
+            "evidence": len(suggestion.evidence_ids),
+            "ms": round((time.perf_counter() - started) * 1000),
+        },
+    )
+
+    cited = set(suggestion.evidence_ids)
+    return InterviewSuggestionResponse(
+        question_id=question_id,
+        answer=suggestion.answer,
+        outline=suggestion.outline,
+        caveats=suggestion.caveats,
+        preparation_notes=suggestion.preparation_notes,
+        evidence=[e for e in session.evidence if e.id in cited],
     )
 
 
