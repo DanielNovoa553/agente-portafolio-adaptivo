@@ -1,14 +1,16 @@
 import logging
-from typing import Any
 
 from langgraph.graph import END, START, StateGraph
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
+from app.agent.context import collect_evidence_ids, format_evidence
 from app.agent.prompts import ANALYZE_SYSTEM, GENERATE_SYSTEM, TASK_INSTRUCTIONS
 from app.agent.state import OUTPUT_SCHEMAS, AgentState, OutputType
 from app.rag.store import ProfileStore
 from app.schemas.documents import JobAnalysis
 from app.schemas.evidence import Evidence
+
+__all__ = ["collect_evidence_ids", "format_evidence", "run_agent", "build_graph"]
 
 logger = logging.getLogger("agent")
 
@@ -19,29 +21,6 @@ MIN_TOP_SCORE = 0.665
 MIN_EVIDENCE = 2
 K_PER_QUERY = 4
 MAX_EVIDENCE = 12
-
-
-def collect_evidence_ids(obj: Any) -> set[str]:
-    """Reúne todos los `evidence_ids` de un modelo (incluidos los anidados)."""
-    ids: set[str] = set()
-    if isinstance(obj, BaseModel):
-        for name in type(obj).model_fields:
-            value = getattr(obj, name)
-            if name == "evidence_ids":
-                ids.update(value)
-            else:
-                ids |= collect_evidence_ids(value)
-    elif isinstance(obj, list):
-        for item in obj:
-            ids |= collect_evidence_ids(item)
-    return ids
-
-
-def format_evidence(evidence: list[Evidence]) -> str:
-    return "\n\n".join(
-        f"[ID: {e.id}] ({e.doc_type.value} / {e.section or 'general'})\n{e.text}"
-        for e in evidence
-    )
 
 
 def retrieve_evidence(store: ProfileStore, a: JobAnalysis) -> list[Evidence]:

@@ -15,6 +15,7 @@ class GenerateResponse(BaseModel):
     output_type: OutputType
     document: dict[str, Any]
     evidence: list[Evidence]
+    retrieved_evidence: list[Evidence] = []
     attempts: int
 
 

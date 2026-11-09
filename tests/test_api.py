@@ -34,7 +34,7 @@ def make_client(store, monkeypatch):
     def _make(llm=None):
         app.dependency_overrides[store_dep] = lambda: store
         app.dependency_overrides[llm_dep] = lambda: llm
-        return TestClient(app, headers={"X-Privacy-Consent": "1"})
+        return TestClient(app, headers={"X-Privacy-Consent": "2"})
 
     yield _make
     app.dependency_overrides.clear()
@@ -82,6 +82,7 @@ def test_generate_ok_returns_document_and_used_evidence(make_client):
     body = r.json()
     assert body["document"]["headline"] == "Dev"
     assert [e["id"] for e in body["evidence"]] == ["cv.md::0"]
+    assert {e["id"] for e in body["retrieved_evidence"]} == {"cv.md::0", "cv.md::1"}
     assert body["attempts"] == 1
     assert "X-Request-ID" in r.headers
 
@@ -143,7 +144,7 @@ def test_generate_rejects_unknown_model(store, monkeypatch):
     limiter.enabled = False
     app.dependency_overrides[store_dep] = lambda: store
     monkeypatch.setattr("app.api.deps.is_allowed", lambda m: False)
-    r = TestClient(app, headers={"X-Privacy-Consent": "1"}).post(
+    r = TestClient(app, headers={"X-Privacy-Consent": "2"}).post(
         "/generate?model=inventado", json={"job_text": JOB, "output_type": "cv"}
     )
     app.dependency_overrides.clear()
@@ -183,7 +184,7 @@ def test_missing_api_key_is_503(store, monkeypatch):
     app.dependency_overrides[store_dep] = lambda: store
     monkeypatch.setattr("app.agent.llm.settings.google_api_key", "")
     app.dependency_overrides.pop(llm_dep, None)
-    r = TestClient(app, headers={"X-Privacy-Consent": "1"}).post(
+    r = TestClient(app, headers={"X-Privacy-Consent": "2"}).post(
         "/generate", json={"job_text": JOB, "output_type": "cv"}
     )
     app.dependency_overrides.clear()

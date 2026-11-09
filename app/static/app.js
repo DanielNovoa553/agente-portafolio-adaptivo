@@ -3,10 +3,30 @@
 const $ = (id) => document.getElementById(id);
 const MIN_JOB = 50;
 
-const PRIVACY_VERSION = "1";
+const PRIVACY_VERSION = "2";
 const CONSENT_KEY = "privacyConsent";
 
-const state = { file: null, markdown: "", outputType: "cv", stepTimer: null };
+const state = {
+  file: null,
+  markdown: "",
+  outputType: "cv",
+  stepTimer: null,
+  jobText: "",
+  document: null,
+  documentType: null,
+  evidence: [],
+  retrievedEvidence: [],
+  interview: {
+    sessionId: null,
+    roleTitle: "",
+    questions: [],
+    current: 0,
+    answered: [],
+    total: 0,
+    nextQuestionId: null,
+    expiresAt: null,
+  },
+};
 
 function hasConsent() {
   return localStorage.getItem(CONSENT_KEY) === PRIVACY_VERSION;
@@ -60,7 +80,11 @@ async function api(path, options = {}) {
   } catch {
     /* respuesta sin JSON */
   }
-  if (!res.ok) throw new Error(errorMessage(data, res.status));
+  if (!res.ok) {
+    const err = new Error(errorMessage(data, res.status));
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
@@ -372,6 +396,460 @@ function renderEvidence(evidence) {
   });
 }
 
+/* ---------- Entrevista ---------- */
+
+const CATEGORY_LABEL = {
+  technical: "Técnica",
+  project: "Proyecto",
+  behavioral: "Conductual",
+  role_fit: "Encaje",
+  gap: "Gap",
+};
+const DIFFICULTY_LABEL = { easy: "Fácil", medium: "Media", hard: "Difícil" };
+const VERDICT_LABEL = { strong: "Sólida", partial: "Parcial", weak: "A mejorar" };
+const CRITERION_LABEL = {
+  relevance: "Relevancia",
+  evidence_alignment: "Alineación con la evidencia",
+  specificity: "Especificidad",
+  structure: "Estructura",
+  technical_depth: "Profundidad técnica",
+};
+
+function emptyInterview() {
+  return {
+    sessionId: null,
+    roleTitle: "",
+    questions: [],
+    current: 0,
+    answered: [],
+    total: 0,
+    nextQuestionId: null,
+    expiresAt: null,
+  };
+}
+
+function showInterviewState(name) {
+  $("interviewIntro").hidden = name !== "intro";
+  $("interviewLoading").hidden = name !== "loading";
+  $("interviewError").hidden = name !== "error";
+  $("interviewActive").hidden = name !== "active";
+  $("interviewSummary").hidden = name !== "summary";
+}
+
+function updateInterviewAvailability() {
+  const enabled = Boolean(state.document);
+  const tab = $("interviewTab");
+  tab.classList.toggle("disabled", !enabled);
+  tab.setAttribute("aria-disabled", String(!enabled));
+  tab.title = enabled ? "" : "Genera un documento primero";
+  $("startInterviewBtn").disabled = !enabled;
+  $("interviewIntroHint").hidden = enabled;
+}
+
+function setInterviewBadge() {
+  const iv = state.interview;
+  const total = iv.questions.length || iv.total || 0;
+  $("interviewBadge").textContent = `${iv.answered.length}/${total}`;
+}
+
+function resetInterview({ deleteSession = true } = {}) {
+  const sessionId = state.interview.sessionId;
+  if (deleteSession && sessionId) {
+    api(`/interview/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" }).catch(() => {});
+  }
+  state.interview = emptyInterview();
+  $("interviewFeedback").replaceChildren();
+  $("interviewFeedback").hidden = true;
+  $("interviewSummary").replaceChildren();
+  $("interviewAnswerError").hidden = true;
+  $("interviewNav").hidden = true;
+  $("answerText").value = "";
+  $("answerText").readOnly = false;
+  $("answerCounter").textContent = "0 / 5000";
+  $("evaluateAnswerBtn").disabled = true;
+  setInterviewBadge();
+  showInterviewState("intro");
+  updateInterviewAvailability();
+}
+
+function handleInterviewError(error) {
+  if (error.status === 404) {
+    resetInterview({ deleteSession: false });
+    toast("La sesión expiró. Inicia una nueva entrevista.", "err");
+    return true;
+  }
+  return false;
+}
+
+function updateAnswerState() {
+  const value = $("answerText").value;
+  $("answerCounter").textContent = `${value.length} / 5000`;
+  $("evaluateAnswerBtn").disabled = !value.trim();
+}
+
+function renderInterviewEvidence(ids) {
+  const box = $("interviewEvidenceChips");
+  box.replaceChildren();
+  const all = state.retrievedEvidence.length ? state.retrievedEvidence : state.evidence;
+  ids.forEach((id) => {
+    const ev = all.find((e) => e.id === id);
+    const chip = el("span", { cls: "interview-evidence-chip", text: id });
+    if (ev) chip.title = ev.text;
+    box.append(chip);
+  });
+  $("interviewEvidenceDetails").hidden = ids.length === 0;
+  if (!ids.length) $("interviewEvidenceDetails").open = false;
+}
+
+function showQuestion(index) {
+  const iv = state.interview;
+  const question = iv.questions[index];
+  if (!question) return;
+  iv.current = index;
+  $("interviewProgress").textContent = `Pregunta ${index + 1} de ${iv.total}`;
+  $("interviewCategory").textContent = CATEGORY_LABEL[question.category] || question.category;
+  $("interviewCategory").className = `badge interview-cat cat-${question.category}`;
+  $("interviewDifficulty").textContent =
+    DIFFICULTY_LABEL[question.difficulty] || question.difficulty;
+  $("interviewDifficulty").className = `badge interview-diff diff-${question.difficulty}`;
+  $("interviewQuestionText").textContent = question.question;
+  $("interviewWhy").textContent = question.why_asked;
+  renderInterviewEvidence(question.evidence_ids || []);
+  $("interviewAnswerError").hidden = true;
+  $("interviewFeedback").replaceChildren();
+  $("interviewFeedback").hidden = true;
+  $("interviewNav").hidden = true;
+  $("answerForm").hidden = false;
+  $("answerText").readOnly = false;
+  $("answerText").value = "";
+  updateAnswerState();
+  showInterviewState("active");
+  $("answerText").focus();
+}
+
+async function startInterview() {
+  if (!state.document) {
+    updateInterviewAvailability();
+    return;
+  }
+  const btn = $("interviewError").hidden ? $("startInterviewBtn") : $("interviewRetryBtn");
+  setLoading(btn, true);
+  showInterviewState("loading");
+  try {
+    const model = $("modelSelect").value;
+    const body = {
+      job_text: state.jobText || $("jobText").value.trim(),
+      output_type: state.documentType || state.outputType,
+      document: state.document,
+      evidence: state.retrievedEvidence.length ? state.retrievedEvidence : state.evidence,
+      question_count: Number($("questionCount").value),
+    };
+    const data = await api(
+      `/interview/sessions${model ? `?model=${encodeURIComponent(model)}` : ""}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    );
+    const iv = state.interview;
+    iv.sessionId = data.session_id;
+    iv.roleTitle = data.role_title;
+    iv.questions = data.questions;
+    iv.total = data.questions.length;
+    iv.current = 0;
+    iv.answered = [];
+    iv.nextQuestionId = null;
+    iv.expiresAt = data.expires_at;
+    setInterviewBadge();
+    showQuestion(0);
+    toast(`Entrevista preparada: ${data.questions.length} preguntas`);
+  } catch (e) {
+    if (!handleInterviewError(e)) {
+      $("interviewErrorText").textContent = e.message;
+      showInterviewState("error");
+    }
+  } finally {
+    setLoading(btn, false);
+    updateInterviewAvailability();
+  }
+}
+
+function scoreBadge(score, verdict, answered, total) {
+  return el("div", { cls: `interview-verdict verdict-${verdict}` }, [
+    el("div", { cls: "verdict-score" }, [
+      el("span", { cls: "num", text: String(score) }),
+      el("span", { cls: "of", text: "/100" }),
+    ]),
+    el("div", {}, [
+      el("div", { cls: "verdict-label", text: VERDICT_LABEL[verdict] || verdict }),
+      el("div", {
+        cls: "small text-body-secondary",
+        text: `${answered} de ${total} preguntas evaluadas`,
+      }),
+    ]),
+  ]);
+}
+
+function criterionBars(criteria) {
+  return el(
+    "div",
+    { cls: "interview-criteria" },
+    criteria.map((c) => {
+      const pct = Math.round((c.score / 5) * 100);
+      return el("div", { cls: "criterion" }, [
+        el("div", { cls: "criterion-head" }, [
+          el("span", { text: CRITERION_LABEL[c.criterion] || c.criterion }),
+          el("span", { cls: "criterion-score", text: `${c.score}/5` }),
+        ]),
+        el(
+          "div",
+          {
+            cls: "progress",
+            attrs: {
+              role: "progressbar",
+              "aria-valuenow": pct,
+              "aria-valuemin": 0,
+              "aria-valuemax": 100,
+            },
+          },
+          [el("div", { cls: "progress-bar", attrs: { style: `width:${pct}%` } })]
+        ),
+        el("p", { cls: "criterion-comment", text: c.comment }),
+      ]);
+    })
+  );
+}
+
+function feedbackBlock(title, items, icon, cls = "", ordered = false) {
+  return el("div", { cls: `feedback-block ${cls}`.trim() }, [
+    el("h4", {}, [
+      el("i", { cls: `bi ${icon} me-1` }),
+      document.createTextNode(title),
+    ]),
+    el(ordered ? "ol" : "ul", { cls: "mb-0" }, items.map((t) => el("li", { text: t }))),
+  ]);
+}
+
+function evidenceChips(evidence) {
+  const chips = el("div", { cls: "interview-evidence-chips" });
+  evidence.forEach((e) => {
+    const chip = el("span", { cls: "interview-evidence-chip", text: e.id });
+    chip.title = e.text;
+    chips.append(chip);
+  });
+  return chips;
+}
+
+function renderFeedback(data) {
+  const nodes = [
+    scoreBadge(data.score, data.verdict, data.answered, data.total),
+    criterionBars(data.criteria),
+    el("div", { cls: "feedback-grid" }, [
+      feedbackBlock("Fortalezas", data.strengths, "bi-check-circle", "ok"),
+      feedbackBlock("Carencias", data.gaps, "bi-arrow-up-right-circle", "warn"),
+    ]),
+  ];
+  if (data.unsupported_claims.length) {
+    nodes.push(
+      feedbackBlock(
+        "Afirmaciones no respaldadas por el material",
+        data.unsupported_claims,
+        "bi-exclamation-triangle",
+        "flag"
+      )
+    );
+  }
+  nodes.push(
+    feedbackBlock("Esquema sugerido", data.suggested_outline, "bi-list-ol", "", true)
+  );
+  if (data.evidence.length) {
+    nodes.push(
+      el("div", { cls: "feedback-block" }, [
+        el("h4", {}, [
+          el("i", { cls: "bi bi-link-45deg me-1" }),
+          document.createTextNode("Evidencias citadas"),
+        ]),
+        evidenceChips(data.evidence),
+      ])
+    );
+  }
+  $("interviewFeedback").replaceChildren(...nodes);
+}
+
+async function submitInterviewAnswer() {
+  const iv = state.interview;
+  const question = iv.questions[iv.current];
+  const answer = $("answerText").value.trim();
+  if (!question || !answer) return;
+
+  const btn = $("evaluateAnswerBtn");
+  setLoading(btn, true);
+  $("answerText").readOnly = true;
+  $("interviewAnswerError").hidden = true;
+  try {
+    const data = await api(
+      `/interview/sessions/${encodeURIComponent(iv.sessionId)}/answers`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question_id: question.id, answer }),
+      }
+    );
+    if (!iv.answered.includes(question.id)) iv.answered.push(question.id);
+    iv.nextQuestionId = data.next_question_id;
+    renderFeedback(data);
+    $("answerForm").hidden = true;
+    $("interviewFeedback").hidden = false;
+    $("interviewNav").hidden = false;
+    $("nextQuestionBtn").hidden = !data.next_question_id;
+    $("summaryBtn").classList.toggle("btn-primary", !data.next_question_id);
+    $("summaryBtn").classList.toggle("btn-outline-primary", Boolean(data.next_question_id));
+    setInterviewBadge();
+  } catch (e) {
+    if (handleInterviewError(e)) return;
+    $("interviewAnswerErrorText").textContent = e.message;
+    $("interviewAnswerError").hidden = false;
+  } finally {
+    setLoading(btn, false);
+    $("answerText").readOnly = false;
+    updateAnswerState();
+  }
+}
+
+function nextQuestion() {
+  const iv = state.interview;
+  const index = iv.questions.findIndex((q) => q.id === iv.nextQuestionId);
+  if (index >= 0) showQuestion(index);
+}
+
+async function showInterviewSummary() {
+  const iv = state.interview;
+  if (!iv.sessionId) return;
+  const btn = $("summaryBtn");
+  setLoading(btn, true);
+  try {
+    const data = await api(
+      `/interview/sessions/${encodeURIComponent(iv.sessionId)}/summary`
+    );
+    renderSummary(data);
+    showInterviewState("summary");
+  } catch (e) {
+    if (!handleInterviewError(e)) {
+      $("interviewAnswerErrorText").textContent = e.message;
+      $("interviewAnswerError").hidden = false;
+    }
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+function renderSummary(data) {
+  const root = $("interviewSummary");
+  const verdict =
+    data.overall_score >= 80 ? "strong" : data.overall_score >= 60 ? "partial" : "weak";
+  const nodes = [
+    scoreBadge(data.overall_score, verdict, data.answered, data.total),
+    el("p", {
+      cls: "text-body-secondary small mt-2",
+      text: data.completed
+        ? "Entrevista completada."
+        : `Has respondido ${data.answered} de ${data.total} preguntas.`,
+    }),
+  ];
+
+  const byCategory = Object.entries(data.by_category);
+  if (byCategory.length) {
+    const bars = el(
+      "div",
+      { cls: "interview-criteria" },
+      byCategory.map(([category, score]) => {
+        const pct = Math.max(0, Math.min(100, score));
+        return el("div", { cls: "criterion" }, [
+          el("div", { cls: "criterion-head" }, [
+            el("span", { text: CATEGORY_LABEL[category] || category }),
+            el("span", { cls: "criterion-score", text: `${score}/100` }),
+          ]),
+          el("div", { cls: "progress" }, [
+            el("div", { cls: "progress-bar", attrs: { style: `width:${pct}%` } }),
+          ]),
+        ]);
+      })
+    );
+    nodes.push(
+      el("div", { cls: "feedback-block" }, [
+        el("h4", {}, [
+          el("i", { cls: "bi bi-bar-chart me-1" }),
+          document.createTextNode("Media por categoría"),
+        ]),
+        bars,
+      ])
+    );
+  }
+
+  nodes.push(
+    el("div", { cls: "feedback-grid" }, [
+      feedbackBlock("Fortalezas recurrentes", data.top_strengths, "bi-check-circle", "ok"),
+      feedbackBlock("Carencias recurrentes", data.top_gaps, "bi-arrow-up-right-circle", "warn"),
+    ]),
+    feedbackBlock("Próximos pasos", data.next_steps, "bi-signpost-split")
+  );
+
+  if (data.unanswered_question_ids.length) {
+    nodes.push(
+      el("p", {
+        cls: "small text-body-secondary",
+        text: `Preguntas sin responder: ${data.unanswered_question_ids.join(" · ")}`,
+      })
+    );
+  }
+
+  const actions = el("div", { cls: "d-flex gap-2 mt-4 flex-wrap" });
+  if (data.unanswered_question_ids.length) {
+    const resume = el("button", {
+      cls: "btn btn-primary",
+      text: "Continuar entrevista",
+      attrs: { type: "button" },
+    });
+    resume.addEventListener("click", () => {
+      const index = state.interview.questions.findIndex(
+        (q) => q.id === data.unanswered_question_ids[0]
+      );
+      if (index >= 0) showQuestion(index);
+    });
+    actions.append(resume);
+  }
+  const again = el("button", {
+    cls: "btn btn-outline-primary",
+    text: "Nueva entrevista",
+    attrs: { type: "button" },
+  });
+  again.addEventListener("click", () => resetInterview());
+  const finish = el("button", {
+    cls: "btn btn-outline-secondary",
+    text: "Terminar",
+    attrs: { type: "button" },
+  });
+  finish.addEventListener("click", finishInterview);
+  actions.append(again, finish);
+  nodes.push(actions);
+
+  root.replaceChildren(el("div", {}, nodes));
+}
+
+async function finishInterview() {
+  const sessionId = state.interview.sessionId;
+  if (sessionId) {
+    try {
+      await api(`/interview/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+    } catch {
+      /* la sesión pudo expirar */
+    }
+  }
+  resetInterview({ deleteSession: false });
+  toast("Entrevista terminada");
+}
+
 /* ---------- Generación ---------- */
 
 async function generate() {
@@ -389,10 +867,19 @@ async function generate() {
       body: JSON.stringify({ job_text: $("jobText").value.trim(), output_type: type }),
     });
     state.outputType = data.output_type;
+    state.document = data.document;
+    state.documentType = data.output_type;
+    state.jobText = $("jobText").value.trim();
+    state.evidence = data.evidence;
+    state.retrievedEvidence =
+      Array.isArray(data.retrieved_evidence) && data.retrieved_evidence.length
+        ? data.retrieved_evidence
+        : data.evidence;
     state.markdown = toMarkdown(data.output_type, data.document);
     const view = $("documentView");
     view.replaceChildren(RENDERERS[data.output_type](data.document));
     renderEvidence(data.evidence);
+    resetInterview();
     showPanel("document");
     if (data.attempts > 1) toast(`Generado tras ${data.attempts} intentos de validación`);
   } catch (e) {
@@ -499,6 +986,30 @@ document.addEventListener("DOMContentLoaded", () => {
   $("jobText").addEventListener("input", updateGenerateState);
   $("copyBtn").addEventListener("click", copyResult);
   $("downloadBtn").addEventListener("click", downloadResult);
+
+  resetInterview({ deleteSession: false });
+  $("startInterviewBtn").addEventListener("click", startInterview);
+  $("interviewRetryBtn").addEventListener("click", startInterview);
+  $("evaluateAnswerBtn").addEventListener("click", submitInterviewAnswer);
+  $("answerText").addEventListener("input", updateAnswerState);
+  $("answerText").addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      submitInterviewAnswer();
+    }
+  });
+  $("nextQuestionBtn").addEventListener("click", nextQuestion);
+  $("summaryBtn").addEventListener("click", showInterviewSummary);
+  $("finishInterviewBtn").addEventListener("click", finishInterview);
+
+  document.querySelectorAll('#resultTabs [data-bs-toggle="pill"]').forEach((tab) => {
+    tab.addEventListener("shown.bs.tab", (event) => {
+      const target = event.target.getAttribute("data-bs-target");
+      if (target !== "#tabDoc") $("resultActions").hidden = true;
+      else if (state.document) $("resultActions").hidden = false;
+    });
+  });
+
   updateGenerateState();
   checkHealth();
   if (hasConsent()) {

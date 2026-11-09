@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.api import generate, health, models, profile
+from app.api import generate, health, interview, models, profile
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.logging import setup_logging
@@ -70,6 +70,7 @@ app.include_router(health.router)
 app.include_router(models.router)
 app.include_router(profile.router)
 app.include_router(generate.router)
+app.include_router(interview.router)
 
 # Debe montarse al final para no tapar las rutas de la API
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

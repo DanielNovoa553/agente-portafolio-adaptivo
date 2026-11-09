@@ -30,5 +30,6 @@ def generate(
         output_type=body.output_type,
         document=state["draft"].model_dump(mode="json"),
         evidence=[e for e in state["evidence"] if e.id in used_ids],
+        retrieved_evidence=state["evidence"],
         attempts=state["attempts"],
     )

@@ -2,13 +2,18 @@ from fastapi import Header, HTTPException, Query
 
 from app.agent.llm import get_llm
 from app.agent.models import is_allowed
+from app.interview.store import InterviewSessionStore, get_interview_store
 from app.rag.store import ProfileStore, get_store
 
-PRIVACY_VERSION = "1"
+PRIVACY_VERSION = "2"
 
 
 def store_dep() -> ProfileStore:
     return get_store()
+
+
+def interview_store_dep() -> InterviewSessionStore:
+    return get_interview_store()
 
 
 def llm_dep(model: str | None = Query(None, max_length=100)):

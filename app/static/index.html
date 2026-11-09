@@ -140,6 +140,7 @@
             <ul class="nav nav-pills" id="resultTabs" role="tablist">
               <li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" data-bs-target="#tabDoc" type="button" role="tab">Documento</button></li>
               <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tabEvidence" type="button" role="tab">Evidencias <span class="badge rounded-pill ms-1" id="evidenceBadge">0</span></button></li>
+              <li class="nav-item"><button class="nav-link disabled" id="interviewTab" data-bs-toggle="pill" data-bs-target="#tabInterview" type="button" role="tab" aria-disabled="true" title="Genera un documento primero">Entrevista <span class="badge rounded-pill ms-1" id="interviewBadge">0/0</span></button></li>
             </ul>
             <div class="btn-group result-actions" id="resultActions" hidden>
               <button class="btn btn-sm btn-outline-secondary" id="copyBtn" type="button"><i class="bi bi-clipboard me-1"></i>Copiar</button>
@@ -179,6 +180,112 @@
               <div id="evidenceList"></div>
               <p class="text-body-secondary" id="evidenceEmpty">Sin evidencias todavía.</p>
             </div>
+
+            <div class="tab-pane fade" id="tabInterview" role="tabpanel">
+              <div class="interview-intro" id="interviewIntro">
+                <div class="empty-icon"><i class="bi bi-person-video3"></i></div>
+                <h3>Practica la entrevista</h3>
+                <p class="text-body-secondary">
+                  Genera preguntas realistas a partir de esta oferta y del documento.
+                  Tus respuestas se evalúan contra tu perfil y recibes feedback accionable.
+                </p>
+                <p class="small text-body-secondary" id="interviewIntroHint">
+                  Genera primero un documento para habilitar la entrevista.
+                </p>
+                <div class="d-flex flex-wrap gap-2 align-items-end justify-content-center">
+                  <div>
+                    <label for="questionCount" class="form-label small fw-semibold mb-1">Preguntas</label>
+                    <select class="form-select form-select-sm" id="questionCount" aria-label="Número de preguntas">
+                      <option value="5">5</option>
+                      <option value="6" selected>6</option>
+                      <option value="8">8</option>
+                      <option value="10">10</option>
+                    </select>
+                  </div>
+                  <button class="btn btn-primary" id="startInterviewBtn" type="button" disabled>
+                    <span class="btn-label"><i class="bi bi-play-fill me-1"></i>Comenzar entrevista</span>
+                  </button>
+                </div>
+                <p class="interview-note">
+                  <i class="bi bi-shield-lock me-1"></i>
+                  Tus respuestas se envían a Gemini para evaluarlas y se mantienen solo en memoria
+                  mientras la sesión está activa. No se guardan en los logs.
+                </p>
+              </div>
+
+              <div class="loading-state" id="interviewLoading" hidden>
+                <div class="spinner-border" role="status"></div>
+                <h3>Preparando preguntas…</h3>
+                <p class="small text-body-secondary mb-0">Analizando la oferta, el documento y tu evidencia.</p>
+              </div>
+
+              <div class="interview-error" id="interviewError" role="alert" hidden>
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                <div class="flex-grow-1">
+                  <p class="fw-semibold mb-1">No se pudo preparar la entrevista</p>
+                  <p class="mb-2" id="interviewErrorText"></p>
+                  <button class="btn btn-sm btn-outline-secondary" id="interviewRetryBtn" type="button">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Reintentar
+                  </button>
+                </div>
+              </div>
+
+              <div id="interviewActive" hidden>
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                  <div class="d-flex align-items-center flex-wrap gap-2">
+                    <span class="interview-progress" id="interviewProgress">Pregunta 1 de 6</span>
+                    <span class="badge interview-cat" id="interviewCategory">Técnica</span>
+                    <span class="badge interview-diff" id="interviewDifficulty">Media</span>
+                  </div>
+                  <button class="btn btn-sm btn-outline-secondary" id="finishInterviewBtn" type="button">
+                    <i class="bi bi-x-circle me-1"></i>Terminar
+                  </button>
+                </div>
+
+                <div class="interview-question" id="interviewQuestionText"></div>
+
+                <details class="interview-why">
+                  <summary>¿Por qué esta pregunta?</summary>
+                  <p class="mb-0" id="interviewWhy"></p>
+                </details>
+
+                <details class="interview-why" id="interviewEvidenceDetails" hidden>
+                  <summary>Evidencias relacionadas</summary>
+                  <div class="interview-evidence-chips" id="interviewEvidenceChips"></div>
+                </details>
+
+                <div class="alert alert-danger d-flex gap-2 align-items-start mt-3" id="interviewAnswerError" role="alert" hidden>
+                  <i class="bi bi-exclamation-triangle-fill"></i>
+                  <div id="interviewAnswerErrorText"></div>
+                </div>
+
+                <div id="answerForm" class="mt-3">
+                  <label for="answerText" class="form-label small fw-semibold">Tu respuesta</label>
+                  <textarea class="form-control" id="answerText" rows="7" maxlength="5000"
+                    placeholder="Escribe tu respuesta como lo harías en la entrevista…"></textarea>
+                  <div class="d-flex justify-content-between align-items-center mt-2 gap-2 flex-wrap">
+                    <span class="small text-body-secondary" id="answerCounter">0 / 5000</span>
+                    <button class="btn btn-primary" id="evaluateAnswerBtn" type="button" disabled>
+                      <span class="btn-label"><i class="bi bi-check2-circle me-1"></i>Evaluar respuesta</span>
+                    </button>
+                  </div>
+                  <p class="small text-body-secondary mt-2 mb-0">Atajo: Ctrl + Enter para evaluar.</p>
+                </div>
+
+                <div id="interviewFeedback" class="interview-feedback" aria-live="polite" hidden></div>
+
+                <div class="d-flex gap-2 mt-3 flex-wrap" id="interviewNav" hidden>
+                  <button class="btn btn-primary" id="nextQuestionBtn" type="button">
+                    <span class="btn-label">Siguiente pregunta <i class="bi bi-arrow-right ms-1"></i></span>
+                  </button>
+                  <button class="btn btn-outline-primary" id="summaryBtn" type="button">
+                    <i class="bi bi-bar-chart me-1"></i>Ver resumen
+                  </button>
+                </div>
+              </div>
+
+              <div id="interviewSummary" class="interview-summary" aria-live="polite" hidden></div>
+            </div>
           </div>
         </section>
       </div>
@@ -199,16 +306,17 @@
           <h2 class="modal-title fs-5" id="privacyTitle"><i class="bi bi-shield-lock me-2"></i>Aviso de privacidad</h2>
         </div>
         <div class="modal-body small">
-          <p>Para generar documentos, esta aplicación procesa el contenido de los archivos que subas (CV, proyectos, certificaciones) y de las ofertas que pegues. Esa información puede incluir <strong>datos personales y sensibles</strong>.</p>
+          <p>Para generar documentos y practicar entrevistas, esta aplicación procesa el contenido de los archivos que subas (CV, proyectos, certificaciones), de las ofertas que pegues y de las respuestas que escribas. Esa información puede incluir <strong>datos personales y sensibles</strong>.</p>
           <ul>
-            <li><strong>Envío a Google Gemini:</strong> fragmentos de tus documentos y la oferta se envían a la API de Google para crear embeddings y generar el texto. En el nivel gratuito, Google puede usar estos datos para mejorar sus productos y personal autorizado podría revisarlos.</li>
+            <li><strong>Envío a Google Gemini:</strong> fragmentos de tus documentos, la oferta y tus respuestas de entrevista se envían a la API de Google para crear embeddings, generar texto y evaluar las respuestas. En el nivel gratuito, Google puede usar estos datos para mejorar sus productos y personal autorizado podría revisarlos.</li>
             <li><strong>Almacenamiento:</strong> tus documentos se guardan como fragmentos en la base vectorial del servidor donde se ejecuta la app. Puedes borrarlos en cualquier momento desde la lista de fuentes.</li>
-            <li><strong>Recomendación:</strong> no subas documentos con datos que no quieras compartir (número de identificación, domicilio, datos de salud, etc.).</li>
+            <li><strong>Entrevistas:</strong> las respuestas se mantienen solo en memoria mientras la sesión está activa (máximo 2 horas). Se eliminan al terminar la entrevista, al expirar la sesión o al reiniciar el servidor. No se guardan en la base vectorial ni en los logs.</li>
+            <li><strong>Recomendación:</strong> no subas documentos ni escribas respuestas con datos que no quieras compartir (número de identificación, domicilio, datos de salud, etc.).</li>
             <li>Los resultados son generados por IA: revísalos antes de usarlos.</li>
           </ul>
           <div class="form-check mt-3">
             <input class="form-check-input" type="checkbox" id="privacyCheck">
-            <label class="form-check-label" for="privacyCheck">Entiendo lo anterior y acepto el tratamiento de mis datos, incluido su envío a Google Gemini.</label>
+            <label class="form-check-label" for="privacyCheck">Entiendo lo anterior y acepto el tratamiento de mis datos, incluido su envío a Google Gemini para generar documentos y evaluar mis respuestas de entrevista.</label>
           </div>
         </div>
         <div class="modal-footer">
