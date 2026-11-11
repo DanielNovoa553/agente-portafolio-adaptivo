@@ -18,6 +18,24 @@ def generate(
     store: ProfileStore = Depends(store_dep),
     llm=Depends(llm_dep),
 ):
+    """Genera un documento adaptado a la oferta y devuelve la evidencia usada.
+
+    Args:
+        request: Petición HTTP, requerida por el limitador de tasa.
+        body: Texto de la oferta y tipo de documento a generar.
+        store: Almacén del perfil con la evidencia recuperable.
+        llm: Cliente LLM configurado para la generación.
+
+    Returns:
+        GenerateResponse: Documento validado, evidencia citada, evidencia recuperada
+        y número de intentos.
+
+    Raises:
+        HTTPException: 403 sin consentimiento, 422 si la petición no es válida, no
+            hay evidencia suficiente o el modelo no está disponible, 429 si se
+            supera el límite, 502 si el agente no logra una salida válida y 503 si
+            falta la API key o el LLM no responde.
+    """
     state = run_agent(llm, store, body.job_text, body.output_type)
     status = state.get("status")
     if status == "insufficient_evidence":

@@ -108,6 +108,17 @@ class InterviewGenerationFailed(Exception):
 
 
 def validate_document(body: InterviewStartRequest) -> tuple[BaseModel, dict[str, Any]]:
+    """Valida el documento de la petición contra el esquema de su tipo.
+
+    Args:
+        body: Petición de inicio con el tipo de salida y el documento.
+
+    Returns:
+        Tupla con el documento validado y su versión serializada en JSON.
+
+    Raises:
+        InvalidInterviewInput: Si el documento no cumple el esquema esperado.
+    """
     schema = OUTPUT_SCHEMAS[body.output_type]
     try:
         parsed = schema.model_validate(body.document)
@@ -121,6 +132,22 @@ def validate_document(body: InterviewStartRequest) -> tuple[BaseModel, dict[str,
 def select_session_evidence(
     document: BaseModel, evidence: list[Evidence], max_evidence: int
 ) -> list[Evidence]:
+    """Selecciona las evidencias de la sesión a partir del documento.
+
+    Verifica que el documento solo cite IDs existentes y combina las evidencias
+    citadas con las mejor puntuadas hasta `max_evidence`.
+
+    Args:
+        document: Documento generado que cita evidencias.
+        evidence: Evidencias disponibles para la oferta.
+        max_evidence: Número máximo de evidencias a conservar.
+
+    Returns:
+        Evidencias únicas ordenadas de mayor a menor score.
+
+    Raises:
+        InvalidInterviewInput: Si el documento cita IDs que no existen.
+    """
     valid = {e.id: e for e in evidence}
     cited = collect_evidence_ids(document)
     unknown = cited - valid.keys()
@@ -144,6 +171,20 @@ def select_session_evidence(
 def _plan_error(
     plan: GeneratedInterviewPlan, question_count: int, valid_ids: set[str]
 ) -> str | None:
+    """Valida el plan generado y devuelve el primer error encontrado.
+
+    Comprueba el número exacto de preguntas, las categorías obligatorias, los
+    `evidence_ids` existentes y que las preguntas técnicas o de proyecto citen
+    al menos una evidencia.
+
+    Args:
+        plan: Plan generado por el modelo.
+        question_count: Número exacto de preguntas esperado.
+        valid_ids: IDs de evidencia disponibles en la sesión.
+
+    Returns:
+        Mensaje de error, o `None` si el plan es válido.
+    """
     if len(plan.questions) != question_count:
         return (
             f"Deben ser exactamente {question_count} preguntas y llegaron "
@@ -179,6 +220,27 @@ def generate_plan(
     evidence: list[Evidence],
     question_count: int,
 ) -> InterviewPlanInternal:
+    """Genera y valida el plan de entrevista con hasta dos intentos.
+
+    Cada reintento añade el error anterior al prompt. Un plan válido debe tener
+    exactamente `question_count` preguntas, cubrir las categorías obligatorias
+    y citar solo evidencias existentes.
+
+    Args:
+        llm: Modelo de lenguaje con salida estructurada.
+        job_text: Texto completo de la oferta.
+        output_type: Tipo de documento generado que se usa como contexto.
+        document: Documento generado serializado como diccionario.
+        evidence: Evidencias seleccionadas para la sesión.
+        question_count: Número exacto de preguntas solicitadas.
+
+    Returns:
+        Plan interno con preguntas numeradas y puntos esperados.
+
+    Raises:
+        InterviewGenerationFailed: Si no se obtiene un plan válido tras
+            `MAX_PLAN_ATTEMPTS` intentos.
+    """
     prompt = build_plan_prompt(
         job_text=job_text,
         output_type=output_type,
@@ -229,6 +291,18 @@ def generate_plan(
 
 
 def _evaluation_error(evaluation: AnswerEvaluation, valid_ids: set[str]) -> str | None:
+    """Valida la evaluación generada y devuelve el primer error encontrado.
+
+    Comprueba que aparezcan los cinco criterios exactos y que solo se citen
+    evidencias existentes.
+
+    Args:
+        evaluation: Evaluación devuelta por el modelo.
+        valid_ids: IDs de evidencia disponibles en la sesión.
+
+    Returns:
+        Mensaje de error, o `None` si la evaluación es válida.
+    """
     criteria = [c.criterion for c in evaluation.criteria]
     if len(criteria) != 5 or set(criteria) != set(Criterion):
         return (
@@ -249,6 +323,23 @@ def evaluate_with_llm(
     question: InterviewQuestionInternal,
     answer: str,
 ) -> AnswerEvaluation:
+    """Evalúa una respuesta con el modelo de la sesión y hasta dos intentos.
+
+    Cada reintento añade el error anterior al prompt. La evaluación debe incluir
+    los cinco criterios exactos y citar solo evidencias existentes.
+
+    Args:
+        session: Sesión con oferta, documento, evidencias y modelo fijado.
+        question: Pregunta que se está respondiendo.
+        answer: Texto de la respuesta, ya sin espacios sobrantes.
+
+    Returns:
+        Evaluación estructurada de la respuesta.
+
+    Raises:
+        InterviewGenerationFailed: Si no se obtiene una evaluación válida tras
+            `MAX_EVALUATION_ATTEMPTS` intentos.
+    """
     prompt = build_evaluation_prompt(
         job_text=session.job_text,
         output_type=session.output_type,
@@ -291,6 +382,19 @@ def _suggestion_error(
     question: InterviewQuestionInternal,
     valid_ids: set[str],
 ) -> str | None:
+    """Valida el borrador de respuesta y devuelve el primer error encontrado.
+
+    Comprueba la longitud mínima, que solo se citen evidencias existentes y que
+    las preguntas técnicas o de proyecto citen al menos una.
+
+    Args:
+        suggestion: Borrador devuelto por el modelo.
+        question: Pregunta para la que se generó el borrador.
+        valid_ids: IDs de evidencia disponibles en la sesión.
+
+    Returns:
+        Mensaje de error, o `None` si el borrador es válido.
+    """
     if len(suggestion.answer.strip()) < MIN_SUGGESTION_CHARS:
         return f"El borrador debe tener al menos {MIN_SUGGESTION_CHARS} caracteres."
     unknown = set(suggestion.evidence_ids) - valid_ids
@@ -311,6 +415,23 @@ def generate_suggested_answer(
     session: InterviewSession,
     question: InterviewQuestionInternal,
 ) -> SuggestedAnswer:
+    """Genera un borrador de respuesta con hasta dos intentos.
+
+    El borrador debe tener al menos `MIN_SUGGESTION_CHARS` caracteres, citar
+    solo evidencias existentes y, en preguntas técnicas o de proyecto, citar al
+    menos una. Se devuelve con el texto recortado y los IDs sin duplicados.
+
+    Args:
+        session: Sesión con oferta, documento, evidencias y modelo fijado.
+        question: Pregunta para la que se genera el borrador.
+
+    Returns:
+        Borrador validado y normalizado.
+
+    Raises:
+        InterviewGenerationFailed: Si no se obtiene un borrador válido tras
+            `MAX_SUGGESTION_ATTEMPTS` intentos.
+    """
     prompt = build_suggestion_prompt(
         job_text=session.job_text,
         output_type=session.output_type,
@@ -353,12 +474,32 @@ def generate_suggested_answer(
 
 
 def score_answer(evaluation: AnswerEvaluation, category: InterviewCategory) -> int:
+    """Calcula la nota de 0 a 100 a partir de los cinco criterios.
+
+    Usa pesos específicos para preguntas técnicas o de proyecto y otros más
+    generales para el resto.
+
+    Args:
+        evaluation: Evaluación con las notas de cada criterio.
+        category: Categoría de la pregunta evaluada.
+
+    Returns:
+        Puntuación entera acotada al rango 0-100.
+    """
     weights = TECHNICAL_WEIGHTS if category in TECHNICAL_CATEGORIES else GENERAL_WEIGHTS
     total = sum(weights[c.criterion] * c.score for c in evaluation.criteria)
     return max(0, min(100, round(20 * total)))
 
 
 def verdict_for(score: int) -> Verdict:
+    """Clasifica una puntuación en un veredicto cualitativo.
+
+    Args:
+        score: Puntuación de 0 a 100.
+
+    Returns:
+        `strong` desde 80, `partial` desde 60 y `weak` por debajo de 60.
+    """
     if score >= 80:
         return Verdict.strong
     if score >= 60:
@@ -367,6 +508,14 @@ def verdict_for(score: int) -> Verdict:
 
 
 def public_plan(plan: InterviewPlanInternal) -> InterviewPlan:
+    """Convierte el plan interno en la versión pública para el cliente.
+
+    Args:
+        plan: Plan interno con puntos esperados y metadatos.
+
+    Returns:
+        Plan sin `expected_points`, apto para enviar en la respuesta.
+    """
     return InterviewPlan(
         role_title=plan.role_title,
         focus_areas=plan.focus_areas,
@@ -383,6 +532,25 @@ def start_interview(
     body: InterviewStartRequest,
     model_id: str | None = None,
 ) -> InterviewSession:
+    """Crea una sesión de entrevista a partir de la petición.
+
+    Valida el rango de preguntas, el documento y las evidencias citadas, genera
+    el plan con el modelo indicado y guarda la sesión en el almacén.
+
+    Args:
+        store: Almacén de sesiones de entrevista.
+        llm: Modelo de lenguaje con salida estructurada.
+        body: Petición de inicio con oferta, documento y evidencias.
+        model_id: Identificador del modelo elegido, o `None` para el modelo por defecto.
+
+    Returns:
+        Sesión creada y registrada en el almacén.
+
+    Raises:
+        InvalidInterviewInput: Si el número de preguntas, el documento o las
+            evidencias no son válidos.
+        InterviewGenerationFailed: Si no se puede generar un plan válido.
+    """
     if not MIN_QUESTIONS <= body.question_count <= MAX_QUESTIONS:
         raise InvalidInterviewInput(
             f"El número de preguntas debe estar entre {MIN_QUESTIONS} y {MAX_QUESTIONS}."
@@ -421,6 +589,14 @@ def start_interview(
 
 
 def start_response(session: InterviewSession) -> InterviewStartResponse:
+    """Construye la respuesta pública de inicio de entrevista.
+
+    Args:
+        session: Sesión recién creada.
+
+    Returns:
+        Respuesta con ID, caducidad, título, áreas y preguntas públicas.
+    """
     plan = public_plan(session.plan)
     return InterviewStartResponse(
         session_id=session.id,
@@ -432,6 +608,15 @@ def start_response(session: InterviewSession) -> InterviewStartResponse:
 
 
 def _next_question_id(session: InterviewSession, answered: dict[str, AnswerRecord]) -> str | None:
+    """Busca la primera pregunta de la sesión que aún no tiene respuesta.
+
+    Args:
+        session: Sesión con el plan de preguntas.
+        answered: Respuestas registradas, indexadas por ID de pregunta.
+
+    Returns:
+        ID de la siguiente pregunta pendiente, o `None` si están todas.
+    """
     for q in session.plan.questions:
         if q.id not in answered:
             return q.id
@@ -444,6 +629,27 @@ def submit_answer(
     question_id: str,
     answer: str,
 ) -> InterviewAnswerResponse:
+    """Evalúa y registra la respuesta a una pregunta de la sesión.
+
+    La respuesta no se guarda ni se registra en logs; solo se conservan la
+    evaluación, la nota, el veredicto y el momento de la respuesta.
+
+    Args:
+        store: Almacén de sesiones de entrevista.
+        session_id: Identificador de la sesión.
+        question_id: Identificador de la pregunta respondida.
+        answer: Texto de la respuesta enviada por la persona candidata.
+
+    Returns:
+        Respuesta con nota, veredicto, feedback, evidencias y progreso.
+
+    Raises:
+        InvalidInterviewInput: Si la respuesta está vacía, supera el máximo de
+            caracteres o la pregunta no pertenece a la sesión.
+        AlreadyAnswered: Si la pregunta ya tiene una respuesta registrada.
+        SessionNotFound: Si la sesión no existe o ha expirado.
+        InterviewGenerationFailed: Si no se puede evaluar la respuesta.
+    """
     if len(answer.strip()) < MIN_ANSWER_CHARS:
         raise InvalidInterviewInput("La respuesta no puede estar vacía.")
     max_chars = settings.interview_max_answer_chars
@@ -505,6 +711,26 @@ def suggest_answer(
     session_id: str,
     question_id: str,
 ) -> InterviewSuggestionResponse:
+    """Devuelve un borrador de respuesta para una pregunta pendiente.
+
+    Reutiliza el borrador cacheado en la sesión si existe; si no, lo genera y
+    lo guarda. El texto del borrador no se guarda en disco ni se registra en
+    logs.
+
+    Args:
+        store: Almacén de sesiones de entrevista.
+        session_id: Identificador de la sesión.
+        question_id: Identificador de la pregunta pendiente.
+
+    Returns:
+        Borrador con respuesta, esquema, avisos, notas y evidencias citadas.
+
+    Raises:
+        InvalidInterviewInput: Si la pregunta no pertenece a la sesión.
+        AlreadyAnswered: Si la pregunta ya fue respondida.
+        SessionNotFound: Si la sesión no existe o ha expirado.
+        InterviewGenerationFailed: Si no se puede generar un borrador válido.
+    """
     session = store.get(session_id)
     question = next((q for q in session.plan.questions if q.id == question_id), None)
     if question is None:
@@ -547,6 +773,17 @@ def _top_strings(
     fallback: AnswerRecord | None,
     limit: int = 3,
 ) -> list[str]:
+    """Extrae los valores más repetidos de un campo de las evaluaciones.
+
+    Args:
+        records: Respuestas registradas en la sesión.
+        field: Nombre del campo de `AnswerEvaluation` (`strengths` o `gaps`).
+        fallback: Evaluación de la que completar la lista si falta variedad.
+        limit: Número máximo de valores a devolver.
+
+    Returns:
+        Hasta `limit` valores únicos, ordenados por frecuencia.
+    """
     counter = Counter(
         item for r in records for item in getattr(r.evaluation, field)
     )
@@ -568,6 +805,22 @@ def _top_strings(
 def build_summary(
     store: InterviewSessionStore, session_id: str
 ) -> InterviewSummary:
+    """Resume el progreso y los resultados de una sesión de entrevista.
+
+    Calcula la media global y por categoría, extrae fortalezas y carencias
+    recurrentes y propone pasos siguientes según las categorías más bajas.
+
+    Args:
+        store: Almacén de sesiones de entrevista.
+        session_id: Identificador de la sesión.
+
+    Returns:
+        Resumen con progreso, notas, fortalezas, carencias y pasos siguientes.
+
+    Raises:
+        InvalidInterviewInput: Si aún no hay ninguna respuesta registrada.
+        SessionNotFound: Si la sesión no existe o ha expirado.
+    """
     session = store.get(session_id)
     answers = store.snapshot_answers(session_id)
     if not answers:
@@ -618,4 +871,13 @@ def build_summary(
 
 
 def delete_session(store: InterviewSessionStore, session_id: str) -> None:
+    """Elimina una sesión del almacén.
+
+    Args:
+        store: Almacén de sesiones de entrevista.
+        session_id: Identificador de la sesión que se quiere borrar.
+
+    Raises:
+        SessionNotFound: Si la sesión no existe o ha expirado.
+    """
     store.delete(session_id)

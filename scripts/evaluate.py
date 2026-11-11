@@ -31,10 +31,27 @@ DOC_TYPES = {"cv": DocType.cv, "projects": DocType.project, "certifications": Do
 
 
 def pct(num: int, den: int) -> str:
+    """Formatea una proporción como "num/den (porcentaje)".
+
+    Args:
+        num: Numerador de la proporción.
+        den: Denominador de la proporción.
+
+    Returns:
+        str: Texto con la proporción y el porcentaje, o "n/a" si el denominador es 0.
+    """
     return f"{num}/{den} ({num / den:.0%})" if den else "n/a"
 
 
 def load_profile(profile_dir: Path) -> ProfileStore:
+    """Indexa los archivos Markdown del perfil en un almacén efímero.
+
+    Args:
+        profile_dir: Directorio que contiene los archivos .md del perfil.
+
+    Returns:
+        ProfileStore: Almacén en memoria con los fragmentos indexados.
+    """
     store = ProfileStore(path="")
     for f in sorted(profile_dir.glob("*.md")):
         n = ingest_file(store, f.name, f.read_bytes(), DOC_TYPES.get(f.stem, DocType.other))
@@ -43,7 +60,16 @@ def load_profile(profile_dir: Path) -> ProfileStore:
 
 
 def texts_of(obj) -> list[str]:
-    """Todas las cadenas de un documento, sin los IDs de evidencia."""
+    """Recorre un documento y devuelve todas sus cadenas.
+
+    Excluye los valores de las claves "evidence_ids".
+
+    Args:
+        obj: Valor arbitrario del documento (str, dict, list u otro).
+
+    Returns:
+        list[str]: Cadenas encontradas en el documento.
+    """
     if isinstance(obj, str):
         return [obj]
     if isinstance(obj, dict):
@@ -54,7 +80,16 @@ def texts_of(obj) -> list[str]:
 
 
 def unsupported_numbers(document: dict, evidence, job_text: str) -> list[str]:
-    """Cifras del documento que no aparecen en la evidencia ni en la oferta."""
+    """Detecta cifras del documento ausentes en la evidencia y en la oferta.
+
+    Args:
+        document: Documento generado, serializado como diccionario.
+        evidence: Evidencias recuperadas que respaldan el documento.
+        job_text: Texto de la oferta.
+
+    Returns:
+        list[str]: Cifras del documento sin respaldo, ordenadas como texto.
+    """
     source = " ".join([e.text for e in evidence] + [job_text])
     allowed = set(NUMBER.findall(source))
     found = set(NUMBER.findall(" ".join(texts_of(document))))
@@ -62,12 +97,33 @@ def unsupported_numbers(document: dict, evidence, job_text: str) -> list[str]:
 
 
 def recall_at_k(expected: list[str], evidence) -> tuple[list[str], list[str]]:
+    """Calcula qué fragmentos esperados aparecen en el top de evidencias.
+
+    Args:
+        expected: Fragmentos de texto esperados en la evidencia recuperada.
+        evidence: Evidencias recuperadas, ordenadas por relevancia.
+
+    Returns:
+        tuple[list[str], list[str]]: Textos encontrados y textos no encontrados.
+    """
     haystack = " ".join(f"{e.section} {e.text}" for e in evidence[:TOP_K]).lower()
     hit = [x for x in expected if x.lower() in haystack]
     return hit, [x for x in expected if x not in hit]
 
 
 def run_case(llm, store, case: dict) -> dict:
+    """Ejecuta el agente sobre un caso y recopila sus métricas.
+
+    Reintenta una vez si el proveedor lanza una excepción.
+
+    Args:
+        llm: Cliente LLM usado por el agente.
+        store: Almacén del perfil con la evidencia indexada.
+        case: Caso de evaluación con oferta, tipo de salida y expectativas.
+
+    Returns:
+        dict: Fila con estado, intentos, evidencias, métricas y posibles errores.
+    """
     start = time.time()
     state = None
     for attempt in range(2):
@@ -103,6 +159,14 @@ def run_case(llm, store, case: dict) -> dict:
 
 
 def summarize(rows: list[dict]) -> dict:
+    """Agrega las métricas de los casos ejecutados.
+
+    Args:
+        rows: Filas devueltas por `run_case`.
+
+    Returns:
+        dict: Totales y proporciones de recall, generación, fidelidad y rechazos.
+    """
     ok_rows = [r for r in rows if "error" not in r]
     pos = [r for r in ok_rows if r["should_match"]]
     neg = [r for r in ok_rows if not r["should_match"]]
@@ -120,6 +184,14 @@ def summarize(rows: list[dict]) -> dict:
 
 
 def write_reports(rows, summary, model, out_dir: Path) -> None:
+    """Escribe el reporte de evaluación en formato JSON y Markdown.
+
+    Args:
+        rows: Filas con el detalle de cada caso.
+        summary: Métricas agregadas de la evaluación.
+        model: Identificador del modelo evaluado.
+        out_dir: Directorio donde se escriben `report.json` y `report.md`.
+    """
     (out_dir / "report.json").write_text(
         json.dumps({"model": model, "summary": summary, "cases": rows}, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -159,6 +231,15 @@ def write_reports(rows, summary, model, out_dir: Path) -> None:
 
 
 def main() -> None:
+    """Ejecuta la evaluación y reescribe eval/report.json y eval/report.md.
+
+    Indexa el perfil indicado por --profile-dir en una base temporal, evalúa como
+    máximo --limit casos de eval/cases.json con el modelo --model y escribe el
+    reporte en eval/. Termina si falta la API key o no hay archivos de perfil.
+
+    Raises:
+        SystemExit: Si falta GOOGLE_API_KEY o no hay archivos .md en el perfil.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default=None)
     parser.add_argument("--limit", type=int, default=None)

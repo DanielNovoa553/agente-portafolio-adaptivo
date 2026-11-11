@@ -19,6 +19,15 @@ from tests.test_interview import (
 
 
 def payload(**overrides):
+    """Construye el cuerpo JSON para crear una sesión de entrevista.
+
+    Args:
+        **overrides: Campos que reemplazan los valores por defecto del cuerpo.
+
+    Returns:
+        Diccionario con la oferta, el documento, las evidencias y el número de
+        preguntas.
+    """
     data = {
         "job_text": JOB,
         "output_type": "cv",
@@ -32,6 +41,11 @@ def payload(**overrides):
 
 @pytest.fixture
 def istore():
+    """Proporciona un almacén de sesiones de entrevista vacío por test.
+
+    Yields:
+        InterviewSessionStore con TTL y máximo de sesiones por defecto.
+    """
     store = InterviewSessionStore(ttl_minutes=120, max_sessions=100)
     yield store
     store.reset()
@@ -39,10 +53,29 @@ def istore():
 
 @pytest.fixture
 def make_client(istore):
+    """Proporciona una fábrica de clientes con las dependencias sustituidas.
+
+    Desactiva el rate limit mientras dura el test y restaura el estado al final.
+
+    Args:
+        istore: Almacén de sesiones que se inyecta en `interview_store_dep`.
+
+    Yields:
+        Función que recibe un LLM opcional y devuelve un TestClient con la
+        cabecera de consentimiento.
+    """
     limiter.enabled = False
     limiter.reset()
 
     def _make(llm=None):
+        """Crea un cliente de pruebas con el LLM y el almacén indicados.
+
+        Args:
+            llm: Doble del LLM inyectado en `llm_dep`; puede ser None.
+
+        Returns:
+            TestClient configurado con la cabecera de consentimiento.
+        """
         app.dependency_overrides[interview_store_dep] = lambda: istore
         app.dependency_overrides[llm_dep] = lambda: llm
         return TestClient(app, headers={"X-Privacy-Consent": "2"})
@@ -54,6 +87,11 @@ def make_client(istore):
 
 
 def test_create_session_returns_public_questions(make_client):
+    """Verifica que crear una sesión devuelve 201 con preguntas públicas.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+    """
     llm = FakeLLM({"GeneratedInterviewPlan": [make_plan()]})
     r = make_client(llm).post("/interview/sessions", json=payload())
 
@@ -68,6 +106,11 @@ def test_create_session_returns_public_questions(make_client):
 
 
 def test_invalid_document_is_422(make_client):
+    """Verifica que un documento incompleto devuelve 422 sin invocar al LLM.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+    """
     llm = FakeLLM({"GeneratedInterviewPlan": []})
     r = make_client(llm).post(
         "/interview/sessions", json=payload(document={"headline": "incompleto"})
@@ -79,6 +122,11 @@ def test_invalid_document_is_422(make_client):
 
 
 def test_full_answer_summary_and_delete_flow(make_client):
+    """Verifica el flujo de responder, rechazar un duplicado, resumir y borrar.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+    """
     llm = FakeLLM(
         {
             "GeneratedInterviewPlan": [make_plan()],
@@ -121,6 +169,11 @@ def test_full_answer_summary_and_delete_flow(make_client):
 
 
 def test_answer_to_unknown_session_is_404(make_client):
+    """Verifica que responder en una sesión inexistente devuelve 404.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+    """
     c = make_client(FakeLLM({}))
     r = c.post(
         "/interview/sessions/noexiste/answers",
@@ -131,6 +184,11 @@ def test_answer_to_unknown_session_is_404(make_client):
 
 
 def test_unknown_question_is_422(make_client):
+    """Verifica que responder a una pregunta ajena a la sesión devuelve 422.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+    """
     llm = FakeLLM({"GeneratedInterviewPlan": [make_plan()]})
     c = make_client(llm)
     sid = c.post("/interview/sessions", json=payload()).json()["session_id"]
@@ -144,6 +202,11 @@ def test_unknown_question_is_422(make_client):
 
 
 def test_empty_answer_is_422(make_client):
+    """Verifica que una respuesta vacía o con solo espacios devuelve 422.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+    """
     llm = FakeLLM({"GeneratedInterviewPlan": [make_plan()]})
     c = make_client(llm)
     sid = c.post("/interview/sessions", json=payload()).json()["session_id"]
@@ -157,6 +220,12 @@ def test_empty_answer_is_422(make_client):
 
 
 def test_too_long_answer_is_422_without_echo(make_client, monkeypatch):
+    """Verifica que una respuesta demasiado larga devuelve 422 sin repetir su texto.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+        monkeypatch: Fixture que reduce el máximo de caracteres permitidos.
+    """
     monkeypatch.setattr("app.api.interview.settings.interview_max_answer_chars", 10)
     llm = FakeLLM({"GeneratedInterviewPlan": [make_plan()]})
     c = make_client(llm)
@@ -173,6 +242,11 @@ def test_too_long_answer_is_422_without_echo(make_client, monkeypatch):
 
 
 def test_summary_without_answers_is_422(make_client):
+    """Verifica que pedir el resumen sin respuestas registradas devuelve 422.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+    """
     llm = FakeLLM({"GeneratedInterviewPlan": [make_plan()]})
     c = make_client(llm)
     sid = c.post("/interview/sessions", json=payload()).json()["session_id"]
@@ -183,10 +257,20 @@ def test_summary_without_answers_is_422(make_client):
 
 
 def test_delete_unknown_session_is_404(make_client):
+    """Verifica que borrar una sesión inexistente devuelve 404.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+    """
     assert make_client(FakeLLM({})).delete("/interview/sessions/noexiste").status_code == 404
 
 
 def test_interview_routes_require_consent(make_client):
+    """Verifica que las rutas de entrevista devuelven 403 sin consentimiento.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+    """
     c = make_client(FakeLLM({}))
     c.headers.pop("X-Privacy-Consent")
 
@@ -204,6 +288,12 @@ def test_interview_routes_require_consent(make_client):
 
 
 def test_interview_rejects_unknown_model(istore, monkeypatch):
+    """Verifica que crear una sesión con un modelo no permitido devuelve 422.
+
+    Args:
+        istore: Almacén de sesiones inyectado en la aplicación.
+        monkeypatch: Fixture que fuerza a rechazar cualquier modelo.
+    """
     limiter.enabled = False
     app.dependency_overrides[interview_store_dep] = lambda: istore
     monkeypatch.setattr("app.api.deps.is_allowed", lambda m: False)
@@ -218,6 +308,12 @@ def test_interview_rejects_unknown_model(istore, monkeypatch):
 
 
 def test_interview_missing_api_key_is_503(istore, monkeypatch):
+    """Verifica que crear una sesión sin API key de Gemini devuelve 503.
+
+    Args:
+        istore: Almacén de sesiones inyectado en la aplicación.
+        monkeypatch: Fixture que vacía la API key configurada.
+    """
     limiter.enabled = False
     app.dependency_overrides[interview_store_dep] = lambda: istore
     app.dependency_overrides.pop(llm_dep, None)
@@ -233,6 +329,11 @@ def test_interview_missing_api_key_is_503(istore, monkeypatch):
 
 
 def test_interview_start_rate_limit_returns_429(make_client):
+    """Verifica que la sexta creación de sesión en un minuto devuelve 429.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+    """
     llm = FakeLLM({"GeneratedInterviewPlan": [make_plan() for _ in range(5)]})
     c = make_client(llm)
     limiter.enabled = True
@@ -244,10 +345,24 @@ def test_interview_start_rate_limit_returns_429(make_client):
 
 
 def create_session(c, llm=None):
+    """Crea una sesión de entrevista y devuelve su identificador.
+
+    Args:
+        c: Cliente HTTP de pruebas.
+        llm: Parámetro opcional no utilizado por el helper.
+
+    Returns:
+        Identificador de la sesión creada.
+    """
     return c.post("/interview/sessions", json=payload()).json()["session_id"]
 
 
 def test_suggestion_returns_grounded_draft(make_client):
+    """Verifica que la sugerencia incluye borrador, esquema, avisos y evidencias.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+    """
     llm = FakeLLM(
         {
             "GeneratedInterviewPlan": [make_plan()],
@@ -270,6 +385,11 @@ def test_suggestion_returns_grounded_draft(make_client):
 
 
 def test_suggestion_is_cached(make_client):
+    """Verifica que dos peticiones reutilizan la caché sin llamar de nuevo al LLM.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+    """
     llm = FakeLLM(
         {
             "GeneratedInterviewPlan": [make_plan()],
@@ -288,6 +408,11 @@ def test_suggestion_is_cached(make_client):
 
 
 def test_suggestion_unknown_session_is_404(make_client):
+    """Verifica que pedir sugerencia para una sesión inexistente devuelve 404.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+    """
     r = make_client(FakeLLM({})).post(
         "/interview/sessions/noexiste/questions/q1/suggestion"
     )
@@ -296,6 +421,11 @@ def test_suggestion_unknown_session_is_404(make_client):
 
 
 def test_suggestion_answered_question_is_409(make_client):
+    """Verifica que pedir sugerencia para una pregunta ya respondida devuelve 409.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+    """
     llm = FakeLLM(
         {
             "GeneratedInterviewPlan": [make_plan()],
@@ -319,6 +449,11 @@ def test_suggestion_answered_question_is_409(make_client):
 
 
 def test_suggestion_unknown_question_is_422(make_client):
+    """Verifica que pedir sugerencia para una pregunta ajena a la sesión da 422.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+    """
     llm = FakeLLM({"GeneratedInterviewPlan": [make_plan()]})
     c = make_client(llm)
     sid = create_session(c)
@@ -330,6 +465,11 @@ def test_suggestion_unknown_question_is_422(make_client):
 
 
 def test_suggestion_failure_is_502(make_client):
+    """Verifica que un borrador con evidencia inventada agota reintentos y da 502.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+    """
     bad = make_suggestion(evidence_ids=["inventado::9"])
     llm = FakeLLM(
         {
@@ -347,6 +487,11 @@ def test_suggestion_failure_is_502(make_client):
 
 
 def test_suggestion_rate_limit_returns_429(make_client):
+    """Verifica que la undécima sugerencia en un minuto devuelve 429.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+    """
     llm = FakeLLM(
         {
             "GeneratedInterviewPlan": [make_plan()],
@@ -367,6 +512,12 @@ def test_suggestion_rate_limit_returns_429(make_client):
 
 
 def test_suggestion_text_is_not_logged(make_client, caplog):
+    """Verifica que el texto del borrador no se escribe en los logs.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+        caplog: Capturador de logs del test.
+    """
     secret = "BORRADOR-SECRETO-QUE-NO-DEBE-LOGUEARSE"
     suggestion = make_suggestion(
         answer=(
@@ -391,6 +542,12 @@ def test_suggestion_text_is_not_logged(make_client, caplog):
 
 
 def test_answer_text_is_not_logged(make_client, caplog):
+    """Verifica que el texto de la respuesta no aparece en logs ni en la respuesta.
+
+    Args:
+        make_client: Fábrica de clientes con dependencias sustituidas.
+        caplog: Capturador de logs del test.
+    """
     secret = "TEXTO-SECRETO-QUE-NO-DEBE-LOGUEARSE"
     llm = FakeLLM(
         {

@@ -88,6 +88,18 @@ CATEGORY_RULES = (
 
 
 def _wrap(tag: str, text: str) -> str:
+    """Envuelve un texto en una etiqueta y neutraliza cierres internos.
+
+    Sustituye la secuencia de cierre `</` por una versión escapada para que el
+    contenido no pueda cerrar el delimitador antes de tiempo.
+
+    Args:
+        tag: Nombre de la etiqueta que delimita el contenido.
+        text: Contenido que se quiere delimitar.
+
+    Returns:
+        Texto delimitado por las etiquetas de apertura y cierre.
+    """
     # Neutraliza cierres de etiqueta para que el contenido no pueda romper el delimitador.
     safe = text.replace("</", "<\\/")
     return f"<{tag}>\n{safe}\n</{tag}>"
@@ -101,6 +113,21 @@ def build_plan_prompt(
     evidence_text: str,
     question_count: int,
 ) -> str:
+    """Construye el prompt para generar el plan de entrevista.
+
+    Incluye el número exacto de preguntas, las reglas de categorías y las
+    secciones delimitadas de oferta, documento y evidencias.
+
+    Args:
+        job_text: Texto completo de la oferta.
+        output_type: Tipo de documento generado que se usa como contexto.
+        document: Documento generado serializado como diccionario.
+        evidence_text: Evidencias del perfil ya formateadas.
+        question_count: Número exacto de preguntas solicitadas.
+
+    Returns:
+        Prompt completo listo para enviar al modelo.
+    """
     doc_json = json.dumps(document, ensure_ascii=False, indent=2)
     return (
         f"Número exacto de preguntas: {question_count}\n"
@@ -123,6 +150,25 @@ def build_evaluation_prompt(
     expected_points: list[str],
     answer: str,
 ) -> str:
+    """Construye el prompt para evaluar una respuesta de entrevista.
+
+    Incluye la oferta, el documento, las evidencias, la pregunta, los puntos
+    esperados y la respuesta delimitada como datos.
+
+    Args:
+        job_text: Texto completo de la oferta.
+        output_type: Tipo de documento generado que se usa como contexto.
+        document: Documento generado serializado como diccionario.
+        evidence_text: Evidencias del perfil ya formateadas.
+        question: Enunciado de la pregunta que se evalúa.
+        category: Categoría de la pregunta.
+        difficulty: Dificultad declarada de la pregunta.
+        expected_points: Puntos que debería cubrir una buena respuesta.
+        answer: Respuesta de la persona candidata, tratada como datos.
+
+    Returns:
+        Prompt completo listo para enviar al modelo.
+    """
     doc_json = json.dumps(document, ensure_ascii=False, indent=2)
     points = "\n".join(f"- {p}" for p in expected_points)
     return (
@@ -146,6 +192,24 @@ def build_suggestion_prompt(
     difficulty: str,
     expected_points: list[str],
 ) -> str:
+    """Construye el prompt para generar un borrador de respuesta.
+
+    Incluye la oferta, el documento, las evidencias, la pregunta y los puntos
+    esperados que el modelo debe usar como lista de comprobación interna.
+
+    Args:
+        job_text: Texto completo de la oferta.
+        output_type: Tipo de documento generado que se usa como contexto.
+        document: Documento generado serializado como diccionario.
+        evidence_text: Evidencias del perfil ya formateadas.
+        question: Enunciado de la pregunta pendiente.
+        category: Categoría de la pregunta.
+        difficulty: Dificultad declarada de la pregunta.
+        expected_points: Puntos que debería cubrir una buena respuesta.
+
+    Returns:
+        Prompt completo listo para enviar al modelo.
+    """
     doc_json = json.dumps(document, ensure_ascii=False, indent=2)
     points = "\n".join(f"- {p}" for p in expected_points)
     return (
@@ -158,12 +222,36 @@ def build_suggestion_prompt(
 
 
 def plan_feedback(error: str) -> str:
+    """Genera el mensaje de corrección para reintentar el plan.
+
+    Args:
+        error: Descripción del error de validación detectado.
+
+    Returns:
+        Instrucción para corregir el plan anterior.
+    """
     return f"Corrige el plan anterior: {error}"
 
 
 def evaluation_feedback(error: str) -> str:
+    """Genera el mensaje de corrección para reintentar la evaluación.
+
+    Args:
+        error: Descripción del error de validación detectado.
+
+    Returns:
+        Instrucción para corregir la evaluación anterior.
+    """
     return f"Corrige la evaluación anterior: {error}"
 
 
 def suggestion_feedback(error: str) -> str:
+    """Genera el mensaje de corrección para reintentar el borrador.
+
+    Args:
+        error: Descripción del error de validación detectado.
+
+    Returns:
+        Instrucción para corregir el borrador anterior.
+    """
     return f"Corrige el borrador anterior: {error}"

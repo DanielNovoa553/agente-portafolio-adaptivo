@@ -13,6 +13,14 @@ COLLECTION = "profile"
 
 @lru_cache
 def _default_embedder():
+    """Crea y cachea la función de embeddings de Google para ChromaDB.
+
+    Returns:
+        Función de embeddings configurada con el modelo y la clave de la aplicación.
+
+    Raises:
+        RuntimeError: Si falta `GOOGLE_API_KEY` en la configuración.
+    """
     if not settings.google_api_key:
         raise RuntimeError("Falta GOOGLE_API_KEY en .env para generar embeddings")
     os.environ["GOOGLE_API_KEY"] = settings.google_api_key
@@ -22,7 +30,17 @@ def _default_embedder():
 
 
 class ProfileStore:
+    """Almacén de fragmentos del perfil respaldado por una colección de ChromaDB."""
+
     def __init__(self, path: str | None = None, embedding_function=None):
+        """Inicializa el almacén y su cliente de ChromaDB.
+
+        Args:
+            path: Ruta del almacenamiento persistente; si es `None` se usa la
+                configuración y si es vacía se crea un cliente efímero.
+            embedding_function: Función de embeddings opcional; si falta se usa
+                la de Google configurada por defecto.
+        """
         if path is None:
             path = settings.chroma_path
         self._client = (
@@ -33,6 +51,14 @@ class ProfileStore:
 
     @property
     def collection(self):
+        """Devuelve la colección de ChromaDB, creándola de forma perezosa.
+
+        Returns:
+            Colección `profile` configurada con similitud coseno.
+
+        Raises:
+            RuntimeError: Si no hay clave de Google y no se proporcionó un embedder.
+        """
         if self._collection is None:
             self._collection = self._client.get_or_create_collection(
                 name=COLLECTION,
@@ -42,7 +68,16 @@ class ProfileStore:
         return self._collection
 
     def add_document(self, source: str, doc_type: DocType, chunks: list[Chunk]) -> int:
-        """Reemplaza todos los fragmentos previos de `source` (ingesta idempotente)."""
+        """Reemplaza todos los fragmentos previos de `source` (ingesta idempotente).
+
+        Args:
+            source: Nombre del archivo que se indexa.
+            doc_type: Tipo de documento asignado a todos los fragmentos.
+            chunks: Fragmentos que se van a almacenar.
+
+        Returns:
+            Número de fragmentos indexados.
+        """
         self.delete_source(source)
         if not chunks:
             return 0
@@ -57,9 +92,19 @@ class ProfileStore:
         return len(chunks)
 
     def delete_source(self, source: str) -> None:
+        """Elimina todos los fragmentos asociados a un archivo.
+
+        Args:
+            source: Nombre del archivo cuyos fragmentos se eliminan.
+        """
         self.collection.delete(where={"source": source})
 
     def list_sources(self) -> dict[str, int]:
+        """Cuenta los fragmentos indexados por archivo de origen.
+
+        Returns:
+            Diccionario que asocia cada nombre de archivo con su número de fragmentos.
+        """
         metas = self.collection.get(include=["metadatas"])["metadatas"] or []
         counts: dict[str, int] = {}
         for m in metas:
@@ -67,9 +112,15 @@ class ProfileStore:
         return counts
 
     def count(self) -> int:
+        """Cuenta el total de fragmentos almacenados.
+
+        Returns:
+            Número de fragmentos de la colección.
+        """
         return self.collection.count()
 
     def reset(self) -> None:
+        """Elimina la colección completa y olvida la instancia cacheada."""
         try:
             self._client.delete_collection(COLLECTION)
         except Exception:
@@ -79,6 +130,16 @@ class ProfileStore:
     def retrieve(
         self, query: str, k: int = 5, doc_type: DocType | None = None
     ) -> list[Evidence]:
+        """Recupera los fragmentos más similares a una consulta.
+
+        Args:
+            query: Texto de la consulta.
+            k: Número máximo de fragmentos a devolver.
+            doc_type: Si se indica, restringe la búsqueda a ese tipo de documento.
+
+        Returns:
+            Evidencias ordenadas por similitud; lista vacía si no hay fragmentos.
+        """
         total = self.count()
         if total == 0:
             return []
@@ -104,4 +165,9 @@ class ProfileStore:
 
 @lru_cache
 def get_store() -> ProfileStore:
+    """Devuelve la instancia compartida del almacén del perfil.
+
+    Returns:
+        `ProfileStore` persistente cacheado durante la vida del proceso.
+    """
     return ProfileStore()

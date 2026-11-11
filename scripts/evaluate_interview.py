@@ -39,10 +39,28 @@ CASES = ROOT / "eval" / "interview_cases.json"
 
 
 def pct(num: int, den: int) -> str:
+    """Formatea una proporción como "num/den (porcentaje)".
+
+    Args:
+        num: Numerador de la proporción.
+        den: Denominador de la proporción.
+
+    Returns:
+        str: Texto con la proporción y el porcentaje, o "n/a" si el denominador es 0.
+    """
     return f"{num}/{den} ({num / den:.0%})" if den else "n/a"
 
 
 def load_case(case: dict):
+    """Valida un caso y prepara el documento y la evidencia de la sesión.
+
+    Args:
+        case: Caso de evaluación con oferta, documento, evidencias y tipo de salida.
+
+    Returns:
+        tuple: Tipo de salida, evidencias originales, documento validado y evidencias
+        seleccionadas para la sesión.
+    """
     output_type = OutputType(case["output_type"])
     evidence = [Evidence(**item) for item in case["evidence"]]
     request = InterviewStartRequest(
@@ -58,6 +76,18 @@ def load_case(case: dict):
 
 
 def check_plan(llm, case: dict, output_type, document, evidence) -> tuple[bool, str | None]:
+    """Comprueba que el LLM genera un plan de entrevista válido para el caso.
+
+    Args:
+        llm: Cliente LLM usado para generar el plan.
+        case: Caso de evaluación con la oferta.
+        output_type: Tipo de documento de salida.
+        document: Documento validado del caso.
+        evidence: Evidencias seleccionadas para la sesión.
+
+    Returns:
+        tuple[bool, str | None]: Éxito de la generación y mensaje de error si falla.
+    """
     try:
         generate_plan(
             llm,
@@ -73,6 +103,19 @@ def check_plan(llm, case: dict, output_type, document, evidence) -> tuple[bool, 
 
 
 def evaluate_case(llm, case: dict, output_type, document, evidence, model: str):
+    """Evalúa la respuesta del caso en una sesión de entrevista temporal.
+
+    Args:
+        llm: Cliente LLM usado para evaluar la respuesta.
+        case: Caso con la pregunta y la respuesta a evaluar.
+        output_type: Tipo de documento de salida.
+        document: Documento validado del caso.
+        evidence: Evidencias seleccionadas para la sesión.
+        model: Identificador del modelo evaluado.
+
+    Returns:
+        InterviewAnswerResponse: Evaluación de la respuesta del caso.
+    """
     question_data = case["question"]
     question = InterviewQuestionInternal(
         id="q1",
@@ -105,6 +148,16 @@ def evaluate_case(llm, case: dict, output_type, document, evidence, model: str):
 
 
 def run_case(llm, case: dict, model: str) -> dict:
+    """Ejecuta las comprobaciones de un caso de entrevista.
+
+    Args:
+        llm: Cliente LLM usado en la evaluación.
+        case: Caso de evaluación con pregunta, respuesta y expectativas.
+        model: Identificador del modelo evaluado.
+
+    Returns:
+        dict: Fila con validez del plan, score, veredicto, checks y errores.
+    """
     started = time.time()
     row = {
         "id": case["id"],
@@ -166,6 +219,14 @@ def run_case(llm, case: dict, model: str) -> dict:
 
 
 def summarize(rows: list[dict]) -> dict:
+    """Agrega las métricas de los casos de entrevista ejecutados.
+
+    Args:
+        rows: Filas devueltas por `run_case`.
+
+    Returns:
+        dict: Totales de validez, expectativas, evidencia y separación fuerte/débil.
+    """
     evaluated = [r for r in rows if "error" not in r]
     plan_ok = sum(1 for r in rows if r.get("plan_valid"))
     pair_scores: dict[str, dict[str, int]] = {}
@@ -197,6 +258,15 @@ def summarize(rows: list[dict]) -> dict:
 
 
 def write_reports(rows, summary, model, out_dir: Path) -> None:
+    """Escribe el reporte de entrevista en formato JSON y Markdown.
+
+    Args:
+        rows: Filas con el detalle de cada caso.
+        summary: Métricas agregadas de la evaluación.
+        model: Identificador del modelo evaluado.
+        out_dir: Directorio donde se escriben `interview_report.json` y
+            `interview_report.md`.
+    """
     (out_dir / "interview_report.json").write_text(
         json.dumps(
             {"model": model, "summary": summary, "cases": rows},
@@ -255,6 +325,16 @@ def write_reports(rows, summary, model, out_dir: Path) -> None:
 
 
 def main() -> None:
+    """Ejecuta la evaluación y reescribe eval/interview_report.{json,md}.
+
+    Evalúa como máximo --limit casos de eval/interview_cases.json con el modelo
+    --model y escribe el reporte en eval/ sin tocar los reportes del generador.
+    Termina si falta la API key, no existe el archivo de casos o no hay casos.
+
+    Raises:
+        SystemExit: Si falta GOOGLE_API_KEY, no existe el archivo de casos o la
+            lista de casos está vacía.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default=None)
     parser.add_argument("--limit", type=int, default=None)
