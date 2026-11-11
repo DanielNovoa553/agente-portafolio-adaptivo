@@ -1,14 +1,16 @@
 import logging
-from typing import Any
 
 from langgraph.graph import END, START, StateGraph
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
+from app.agent.context import collect_evidence_ids, format_evidence
 from app.agent.prompts import ANALYZE_SYSTEM, GENERATE_SYSTEM, TASK_INSTRUCTIONS
 from app.agent.state import OUTPUT_SCHEMAS, AgentState, OutputType
 from app.rag.store import ProfileStore
 from app.schemas.documents import JobAnalysis
 from app.schemas.evidence import Evidence
+
+__all__ = ["collect_evidence_ids", "format_evidence", "run_agent", "build_graph"]
 
 logger = logging.getLogger("agent")
 
@@ -21,31 +23,20 @@ K_PER_QUERY = 4
 MAX_EVIDENCE = 12
 
 
-def collect_evidence_ids(obj: Any) -> set[str]:
-    """Reúne todos los `evidence_ids` de un modelo (incluidos los anidados)."""
-    ids: set[str] = set()
-    if isinstance(obj, BaseModel):
-        for name in type(obj).model_fields:
-            value = getattr(obj, name)
-            if name == "evidence_ids":
-                ids.update(value)
-            else:
-                ids |= collect_evidence_ids(value)
-    elif isinstance(obj, list):
-        for item in obj:
-            ids |= collect_evidence_ids(item)
-    return ids
-
-
-def format_evidence(evidence: list[Evidence]) -> str:
-    return "\n\n".join(
-        f"[ID: {e.id}] ({e.doc_type.value} / {e.section or 'general'})\n{e.text}"
-        for e in evidence
-    )
-
-
 def retrieve_evidence(store: ProfileStore, a: JobAnalysis) -> list[Evidence]:
-    """Evidencias relevantes (ordenadas por score) para un análisis de oferta."""
+    """Recupera y prioriza evidencias relevantes para un análisis de oferta.
+
+    Lanza consultas con el título, las competencias requeridas, las palabras
+    clave y cada una de las cinco primeras competencias; conserva la mejor
+    puntuación por ID y descarta las evidencias por debajo de `MIN_SCORE`.
+
+    Args:
+        store: Almacén vectorial del perfil profesional.
+        a: Análisis estructurado de la oferta.
+
+    Returns:
+        Hasta `MAX_EVIDENCE` evidencias ordenadas de mayor a menor score.
+    """
     queries = [
         a.title,
         ", ".join(a.required_skills),
@@ -62,7 +53,27 @@ def retrieve_evidence(store: ProfileStore, a: JobAnalysis) -> list[Evidence]:
 
 
 def build_graph(llm, store: ProfileStore):
+    """Construye y compila el grafo del agente de generación de documentos.
+
+    El flujo analiza la oferta, recupera evidencias, genera un borrador y lo
+    valida. Si la validación falla, reintenta hasta `MAX_ATTEMPTS` veces.
+
+    Args:
+        llm: Modelo de lenguaje con salida estructurada.
+        store: Almacén vectorial del perfil profesional.
+
+    Returns:
+        Grafo compilado de LangGraph listo para invocar.
+    """
     def analyze_job(state: AgentState) -> dict:
+        """Analiza la oferta y reinicia el contador de intentos.
+
+        Args:
+            state: Estado del agente con el texto de la oferta.
+
+        Returns:
+            Actualización con el análisis estructurado y `attempts` a cero.
+        """
         analysis = llm.with_structured_output(JobAnalysis).invoke(
             [("system", ANALYZE_SYSTEM), ("human", state["job_text"])]
         )
@@ -70,16 +81,41 @@ def build_graph(llm, store: ProfileStore):
         return {"analysis": analysis, "attempts": 0}
 
     def retrieve(state: AgentState) -> dict:
+        """Recupera evidencias relevantes a partir del análisis de la oferta.
+
+        Args:
+            state: Estado del agente con el análisis ya calculado.
+
+        Returns:
+            Actualización con la lista de evidencias recuperadas.
+        """
         relevant = retrieve_evidence(store, state["analysis"])
         logger.info("evidence retrieved", extra={"count": len(relevant)})
         return {"evidence": relevant}
 
     def route_after_retrieve(state: AgentState) -> str:
+        """Decide si hay evidencia suficiente para generar el documento.
+
+        Args:
+            state: Estado del agente con las evidencias recuperadas.
+
+        Returns:
+            `"generate"` si hay al menos `MIN_EVIDENCE` evidencias y la mejor
+            alcanza `MIN_TOP_SCORE`; en caso contrario, `"insufficient"`.
+        """
         evidence = state["evidence"]
         enough = len(evidence) >= MIN_EVIDENCE and evidence[0].score >= MIN_TOP_SCORE
         return "generate" if enough else "insufficient"
 
     def insufficient(state: AgentState) -> dict:
+        """Marca el estado como falta de evidencia y explica cómo continuar.
+
+        Args:
+            state: Estado del agente (no se modifica).
+
+        Returns:
+            Actualización con el estado `insufficient_evidence` y un mensaje.
+        """
         return {
             "status": "insufficient_evidence",
             "error": "Tu perfil no tiene evidencia suficiente para esta oferta. "
@@ -87,6 +123,18 @@ def build_graph(llm, store: ProfileStore):
         }
 
     def generate(state: AgentState) -> dict:
+        """Genera un borrador estructurado para el tipo de salida solicitado.
+
+        Incluye la oferta, los requisitos, las evidencias y, si existe, el
+        feedback del intento anterior. Los errores de validación de Pydantic se
+        convierten en feedback para el siguiente intento.
+
+        Args:
+            state: Estado del agente con análisis, evidencias y tipo de salida.
+
+        Returns:
+            Actualización con el borrador, el número de intentos y el feedback.
+        """
         schema = OUTPUT_SCHEMAS[state["output_type"]]
         a = state["analysis"]
         human = (
@@ -112,6 +160,15 @@ def build_graph(llm, store: ProfileStore):
             }
 
     def validate(state: AgentState) -> dict:
+        """Comprueba que el borrador solo cite evidencias recuperadas.
+
+        Args:
+            state: Estado del agente con el borrador y las evidencias válidas.
+
+        Returns:
+            `{"status": "ok"}` si es válido; si cita IDs inexistentes, borra el
+            borrador y devuelve feedback con los IDs permitidos.
+        """
         draft = state.get("draft")
         if draft is None:
             return {}
@@ -126,6 +183,15 @@ def build_graph(llm, store: ProfileStore):
         return {"status": "ok"}
 
     def route_after_validate(state: AgentState) -> str:
+        """Decide si el grafo termina, reintenta o falla tras validar.
+
+        Args:
+            state: Estado del agente con el resultado de la validación.
+
+        Returns:
+            `"done"` si el estado es `ok`, `"failed"` al agotar
+            `MAX_ATTEMPTS`, o `"retry"` para generar otro borrador.
+        """
         if state.get("status") == "ok":
             return "done"
         if state.get("attempts", 0) >= MAX_ATTEMPTS:
@@ -133,6 +199,14 @@ def build_graph(llm, store: ProfileStore):
         return "retry"
 
     def failed(state: AgentState) -> dict:
+        """Marca el estado como fallido tras agotar los intentos.
+
+        Args:
+            state: Estado del agente con el último feedback disponible.
+
+        Returns:
+            Actualización con el estado `failed` y un mensaje de error.
+        """
         return {
             "status": "failed",
             "error": f"No se obtuvo una salida válida tras {MAX_ATTEMPTS} intentos. "
@@ -164,5 +238,16 @@ def build_graph(llm, store: ProfileStore):
 
 
 def run_agent(llm, store: ProfileStore, job_text: str, output_type: OutputType) -> AgentState:
+    """Ejecuta el grafo del agente para una oferta y un tipo de salida.
+
+    Args:
+        llm: Modelo de lenguaje con salida estructurada.
+        store: Almacén vectorial del perfil profesional.
+        job_text: Texto completo de la oferta de empleo.
+        output_type: Documento que se quiere generar.
+
+    Returns:
+        Estado final del agente, incluido el borrador o el error.
+    """
     graph = build_graph(llm, store)
     return graph.invoke({"job_text": job_text, "output_type": output_type})

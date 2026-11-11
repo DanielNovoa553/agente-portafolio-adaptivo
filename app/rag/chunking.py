@@ -6,11 +6,28 @@ HEADING = re.compile(r"^(#{1,6})\s+(.*)$", re.MULTILINE)
 
 @dataclass
 class Chunk:
+    """Fragmento de texto indexable junto con su sección de origen.
+
+    Attributes:
+        text: Contenido del fragmento, con el título de la sección como prefijo.
+        section: Título de la sección Markdown de la que procede, o cadena vacía.
+    """
+
     text: str
     section: str
 
 
 def _split_long(text: str, max_chars: int, overlap: int) -> list[str]:
+    """Trocea un texto largo en fragmentos que respetan los límites de palabras.
+
+    Args:
+        text: Texto que se va a dividir.
+        max_chars: Longitud máxima deseada de cada fragmento.
+        overlap: Caracteres que se solapan entre fragmentos consecutivos.
+
+    Returns:
+        Lista de fragmentos no vacíos; contiene el texto completo si ya cabía.
+    """
     if len(text) <= max_chars:
         return [text]
     parts, start = [], 0
@@ -29,7 +46,16 @@ def _split_long(text: str, max_chars: int, overlap: int) -> list[str]:
 
 
 def chunk_text(text: str, max_chars: int = 800, overlap: int = 100) -> list[Chunk]:
-    """Divide por encabezados Markdown y luego por tamaño, conservando la sección."""
+    """Divide por encabezados Markdown y luego por tamaño, conservando la sección.
+
+    Args:
+        text: Documento completo que se va a fragmentar.
+        max_chars: Longitud máxima de cada fragmento.
+        overlap: Caracteres de solapamiento entre fragmentos de una misma sección.
+
+    Returns:
+        Fragmentos en orden, con el título de su sección como prefijo del texto.
+    """
     matches = list(HEADING.finditer(text))
     sections: list[tuple[str, str]] = []
     if not matches:

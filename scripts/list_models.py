@@ -11,6 +11,15 @@ from app.core.config import settings
 
 
 def main() -> None:
+    """Lista los modelos de Gemini disponibles para la API key.
+
+    Sin `--all`, muestra los modelos ofrecidos por la interfaz y el modelo por
+    defecto. Con `--all`, consulta directamente a Gemini e imprime todos los que
+    admiten generateContent.
+
+    Raises:
+        SystemExit: Si falta GOOGLE_API_KEY en .env.
+    """
     if not settings.google_api_key:
         sys.exit("Falta GOOGLE_API_KEY en .env")
     if "--all" in sys.argv:
